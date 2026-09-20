@@ -13,6 +13,7 @@ from queue import Empty, Queue
 
 from decision import DecisionProvider, SimulatorDecisionProvider, TypeSafeDecisionProvider
 from decision import Decision
+from profiles import GameProfile, load_profile
 from vision import GameVision
 
 
@@ -140,6 +141,7 @@ def decision_loop(
     simulator_mode: bool,
     decision_hz: float,
     decision_timeout: float,
+    profile: GameProfile,
     limiter: ActionLimiter,
 ) -> None:
     period = 1.0 / decision_hz
@@ -187,6 +189,7 @@ def decision_loop(
                 controller,
                 decision.action,
                 simulator_mode,
+                profile,
                 limiter,
                 stop,
             )
@@ -208,6 +211,7 @@ def actuate(
     controller: object,
     action: str,
     simulator_mode: bool,
+    profile: GameProfile,
     limiter: ActionLimiter,
     stop: threading.Event,
 ) -> bool:
@@ -217,12 +221,9 @@ def actuate(
         print(f"[HANDS SAFETY] Cooldown blocked {action}.", flush=True)
         return False
     if simulator_mode:
-        if action == "JUMP":
-            print("[SIM HANDS] Pressing SPACE key...", flush=True)
-        elif action == "DODGE_LEFT":
-            print("[SIM HANDS] Pressing LEFT key...", flush=True)
-        elif action == "DODGE_RIGHT":
-            print("[SIM HANDS] Pressing RIGHT key...", flush=True)
+        key_name = profile.actions.get(action, "none").upper()
+        if key_name != "NONE":
+            print(f"[SIM HANDS] Pressing {key_name} key...", flush=True)
         else:
             print("[SIM HANDS] No key press.", flush=True)
         return action == "DO_NOTHING" or action in {
@@ -237,12 +238,19 @@ def actuate(
 
     from pynput import keyboard
 
-    action_keys = {
-        "JUMP": keyboard.Key.space,
-        "DODGE_LEFT": keyboard.Key.left,
-        "DODGE_RIGHT": keyboard.Key.right,
+    key_name = profile.actions.get(action, "none").lower()
+    named_keys = {
+        "space": keyboard.Key.space,
+        "left": keyboard.Key.left,
+        "right": keyboard.Key.right,
+        "up": keyboard.Key.up,
+        "down": keyboard.Key.down,
+        "enter": keyboard.Key.enter,
+        "esc": keyboard.Key.esc,
     }
-    key = action_keys.get(action)
+    key = named_keys.get(key_name)
+    if key is None and len(key_name) == 1:
+        key = keyboard.KeyCode.from_char(key_name)
     if key is None:
         return False
     try:
@@ -268,11 +276,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--action-cooldown", type=float, default=0.15)
     parser.add_argument("--min-action-interval", type=float, default=0.05)
     parser.add_argument("--stop-file", default=None)
+    parser.add_argument("--profile", default=None)
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+    profile = load_profile(args.profile)
     if any(
         value <= 0
         for value in (
@@ -323,6 +333,7 @@ def main() -> None:
                     args.sim,
                     args.decision_hz,
                     args.decision_timeout,
+                    profile,
                     limiter,
                 ),
                 name="system1-decision-loop",

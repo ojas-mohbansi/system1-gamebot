@@ -36,15 +36,24 @@ class SimulatorDecisionProvider:
 class TypeSafeDecisionProvider:
     """Adapter around the published TypeSafe System One Python SDK."""
 
-    def __init__(self, api_key: str, timeout: float = 0.2) -> None:
-        from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
+    def __init__(
+        self,
+        api_key: str,
+        timeout: float = 0.2,
+        client: Any = None,
+        choice_type: Any = None,
+    ) -> None:
+        if client is None or choice_type is None:
+            from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
 
-        self._choice_type = Choice
-        self._client = TypeSafeClient(
-            api_key=api_key,
-            timeout=timeout,
-            retry=RetryPolicy(max_retries=0),
-        )
+            choice_type = choice_type or Choice
+            client = client or TypeSafeClient(
+                api_key=api_key,
+                timeout=timeout,
+                retry=RetryPolicy(max_retries=0),
+            )
+        self._choice_type = choice_type
+        self._client = client
 
     def decide(self, state: str) -> Decision:
         question = self._choice_type(

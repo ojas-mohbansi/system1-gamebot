@@ -62,6 +62,48 @@ python bot.py --sim \
 
 Native mode checks for an X11/Wayland display and a working `pynput` controller before starting. `Ctrl+C`, `SIGTERM`, or creating the configured stop file triggers an emergency stop. Keyboard actions are rate-limited and failed key events stop the runtime.
 
+## Game Profiles
+
+Use `--profile` to load a game-specific JSON profile without changing the runtime:
+
+```bash
+python bot.py --sim --profile profiles/example_runner.json
+```
+
+Example profile:
+
+```json
+{
+	"name": "example-runner",
+	"monitor": {"left": 0, "top": 0, "width": 1280, "height": 720},
+	"actions": {
+		"JUMP": "space",
+		"DODGE_LEFT": "left",
+		"DODGE_RIGHT": "right",
+		"DO_NOTHING": "none"
+	},
+	"detector": "green_obstacle",
+	"detector_config": {
+		"hsv_lower": [35, 90, 140],
+		"hsv_upper": [90, 255, 255],
+		"min_area": 12,
+		"roi_top_fraction": 0.333
+	}
+}
+```
+
+The current detector adapter is `green_obstacle`. Profiles isolate per-game monitor geometry, keyboard mapping, and HSV tuning while keeping the capture, decision, safety, and telemetry runtime shared.
+
+## Tests
+
+Run the dependency-free verification suite from the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The suite covers simulated vision state changes, profile loading, bounded state handoff, action cooldowns, simulated actuation, fallback decisions, and the TypeSafe response adapter with a fake client.
+
 ## Configuration
 
 `GameVision` defaults to the primary monitor. To target a smaller region, pass an `mss` monitor dictionary when constructing it:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from profiles import GameProfile
+
 
 @dataclass(frozen=True)
 class VisionState:
@@ -21,12 +23,14 @@ class GameVision:
         self,
         monitor: dict[str, int] | None = None,
         simulator_mode: bool = False,
+        profile: GameProfile | None = None,
     ) -> None:
         self.simulator_mode = simulator_mode
+        self.profile = profile or GameProfile()
         self._sct: Any = None
         self._cv2: Any = None
         self._np: Any = None
-        self._monitor = monitor or {}
+        self._monitor = monitor or dict(self.profile.monitor or {})
         self._simulated_distance = 100
         if not simulator_mode:
             import cv2
@@ -36,7 +40,7 @@ class GameVision:
             self._cv2 = cv2
             self._np = np
             self._sct = mss.mss()
-            self._monitor = monitor or dict(self._sct.monitors[1])
+            self._monitor = monitor or dict(self.profile.monitor or self._sct.monitors[1])
         self._previous_threat_distance: int | None = None
         self._state = VisionState(0, 0.5, 0.0, False)
 
@@ -75,24 +79,29 @@ class GameVision:
         return frame
 
     def _update_state(self, frame: Any) -> None:
+        if self.profile.detector != "green_obstacle":
+            raise ValueError(f"Unsupported detector: {self.profile.detector}")
         height, width = frame.shape[:2]
         hsv = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2HSV)
 
         # Yeh mask bright green obstacle/health-bar pixels ko isolate karta hai.
+        config = self.profile.detector_config
         mask = self._cv2.inRange(
             hsv,
-            self._np.array((35, 90, 140), dtype=self._np.uint8),
-            self._np.array((90, 255, 255), dtype=self._np.uint8),
+            self._np.array(config["hsv_lower"], dtype=self._np.uint8),
+            self._np.array(config["hsv_upper"], dtype=self._np.uint8),
         )
-        mask[: height // 3, :] = 0
+        roi_top_fraction = float(config["roi_top_fraction"])
+        mask[: int(height * roi_top_fraction), :] = 0
         contours, _ = self._cv2.findContours(
             mask,
             self._cv2.RETR_EXTERNAL,
             self._cv2.CHAIN_APPROX_SIMPLE,
         )
 
+        min_area = float(config["min_area"])
         candidates = [
-            contour for contour in contours if self._cv2.contourArea(contour) >= 12
+            contour for contour in contours if self._cv2.contourArea(contour) >= min_area
         ]
         if not candidates:
             self._state = VisionState(0, 0.5, 0.0, False)
