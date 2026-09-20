@@ -126,7 +126,7 @@ python bot.py --sim \
 
 ## Game Profiles
 
-Profiles keep game-specific details out of the main loop. The checked-in example is [profiles/example_runner.json](profiles/example_runner.json):
+Profiles keep game-specific details out of the main loop. The checked-in example is [profiles/example_runner.json](../profiles/example_runner.json):
 
 ```bash
 python bot.py --sim --profile profiles/example_runner.json
