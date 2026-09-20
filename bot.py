@@ -444,4 +444,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, ValueError) as error:
+        print(f"[ERROR] {error}", flush=True)
+        raise SystemExit(2) from error

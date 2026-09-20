@@ -192,6 +192,8 @@ git diff --check
 
 The tests cover simulator state changes, profile validation, bounded state handoff, input suppression, cooldowns, fallback decisions, and TypeSafe response parsing with a fake client.
 
+GitHub Actions runs the same compilation and test checks on pushes and pull requests. Native display, keyboard, and live API checks remain manual because hosted CI runners do not provide the target game environment.
+
 ## Honest Scope
 
 This repository is a foundation for a universal architecture, not a universal game intelligence system. Real support for a game requires:
