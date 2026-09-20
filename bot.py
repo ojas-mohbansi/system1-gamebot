@@ -5,58 +5,11 @@ from __future__ import annotations
 import os
 import argparse
 import time
-from typing import Any
 
+from decision import DecisionProvider, SimulatorDecisionProvider, TypeSafeDecisionProvider
 from vision import GameVision
 
-try:
-    from jev import Client
-except ImportError as error:
-    Client = None  # type: ignore[assignment,misc]
-    _JEV_IMPORT_ERROR = error
-else:
-    _JEV_IMPORT_ERROR = None
-
-
-ACTION_OPTIONS = ["JUMP", "DODGE_LEFT", "DODGE_RIGHT", "DO_NOTHING"]
-
-
-def _response_value(response: Any, name: str, default: Any) -> Any:
-    if isinstance(response, dict):
-        return response.get(name, default)
-    return getattr(response, name, default)
-
-
-def choose_action(client: Any, state: str) -> tuple[str, float]:
-    question = (
-        "Given this live game state, choose exactly one action that maximizes survival: "
-        f"{state}"
-    )
-    response = client.choice(question, ACTION_OPTIONS)
-    action = str(_response_value(response, "choice", response)).upper().strip()
-    probability = float(
-        _response_value(
-            response,
-            "probability",
-            _response_value(response, "confidence", 0.0),
-        )
-    )
-    if action not in ACTION_OPTIONS:
-        action = "DO_NOTHING"
-    return action, probability
-
-
-class SimulatorClient:
-    """Small local choice provider so --sim needs no network or API key."""
-
-    def choice(self, _question: str, _options: list[str]) -> dict[str, Any]:
-        distance = int(_question.rsplit(":", 1)[-1].split()[0])
-        if distance <= 30:
-            return {"choice": "JUMP", "probability": 0.950000}
-        return {"choice": "DO_NOTHING", "probability": 0.875000}
-
-
-def actuate(controller: Any, action: str, simulator_mode: bool) -> None:
+def actuate(controller: object, action: str, simulator_mode: bool) -> None:
     if simulator_mode:
         if action == "JUMP":
             print("[SIM HANDS] Pressing SPACE key...", flush=True)
@@ -103,17 +56,12 @@ def main() -> None:
     args = _parse_args()
     api_key = os.getenv("TYPESAFE_API_KEY")
     if args.sim:
-        client = SimulatorClient()
+        provider: DecisionProvider = SimulatorDecisionProvider()
         controller = None
     else:
         if not api_key:
             raise RuntimeError("TYPESAFE_API_KEY is required outside simulator mode.")
-        if Client is None:
-            raise RuntimeError(
-                "The Jev SDK import failed. Install the Jev SDK that provides "
-                "'jev.Client'; PyPI's typesafe-ai package is only a redirect shim."
-            ) from _JEV_IMPORT_ERROR
-        client = Client(api_key=api_key)
+        provider = TypeSafeDecisionProvider(api_key=api_key)
         try:
             from pynput import keyboard
 
@@ -128,11 +76,12 @@ def main() -> None:
                 start = time.time()
                 vision.capture_and_process_frame()
                 state = vision.get_serialized_state()
-                action, probability = choose_action(client, state)
-                actuate(controller, action, args.sim)
+                decision = provider.decide(state)
+                actuate(controller, decision.action, args.sim)
                 latency_ms = (time.time() - start) * 1000
                 print(
-                    f"action={action} probability={probability:.6f} "
+                    f"action={decision.action} confidence={decision.confidence:.6f} "
+                    f"probabilities={decision.probabilities} "
                     f"frame_latency_ms={latency_ms:.3f}",
                     flush=True,
                 )
@@ -140,6 +89,10 @@ def main() -> None:
                 time.sleep(max(0.0, 0.1 - elapsed))
     except KeyboardInterrupt:
         print("Stopping game bot.")
+    finally:
+        close = getattr(provider, "close", None)
+        if callable(close):
+            close()
 
 
 if __name__ == "__main__":

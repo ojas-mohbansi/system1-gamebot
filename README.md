@@ -10,10 +10,10 @@ A lightweight, modular gaming-bot pipeline:
 
 - Python 3.10 or newer
 - A graphical display accessible to `mss` and `pynput`
-- A Jev SDK installation that provides `jev.Client`
+- The official TypeSafe SDK (`typesafe-sdk==0.7.0`)
 - A `TYPESAFE_API_KEY` environment variable
 
-The pinned `typesafe-ai==0.1.0` dependency is a PyPI redirect shim. It does not provide `jev.Client`; install the official Jev SDK from its provider in the environment where the bot runs.
+The Python integration uses `TypeSafeClient.system_one()` with the `Choice` primitive. The old `typesafe-ai` package is only a PyPI redirect shim and does not provide `jev.Client`.
 
 ## Setup
 
@@ -41,7 +41,7 @@ export TYPESAFE_API_KEY="your-api-key"
 python bot.py
 ```
 
-Stop either loop with `Ctrl+C`. Each iteration logs the selected action, the returned probability, and total capture-to-act latency in milliseconds at approximately 10 Hz.
+Stop either loop with `Ctrl+C`. Each iteration logs the selected action, confidence, choice probabilities, and total capture-to-act latency in milliseconds at approximately 10 Hz.
 
 ## Configuration
 
