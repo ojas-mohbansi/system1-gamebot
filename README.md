@@ -26,11 +26,22 @@ export TYPESAFE_API_KEY="your-api-key"
 
 ## Run
 
+For a headless Codespace or browser terminal, use simulator mode:
+
 ```bash
+python bot.py --sim
+```
+
+Simulator mode generates a moving center-lane obstacle, uses a deterministic local choice provider, and prints simulated keyboard actions. It does not require `TYPESAFE_API_KEY`, a graphical display, or native keyboard permissions.
+
+For native screen capture and keyboard events:
+
+```bash
+export TYPESAFE_API_KEY="your-api-key"
 python bot.py
 ```
 
-Stop the loop with `Ctrl+C`. Each iteration logs the selected action, the returned probability, and total capture-to-act latency in milliseconds.
+Stop either loop with `Ctrl+C`. Each iteration logs the selected action, the returned probability, and total capture-to-act latency in milliseconds at approximately 10 Hz.
 
 ## Configuration
 
@@ -46,4 +57,4 @@ The sample detector tracks bright green pixels in the lower two-thirds of the ca
 
 ## GitHub Codespaces
 
-Codespaces containers are normally headless and cannot capture the host desktop or emit host keyboard events by default. Run this project in a Codespace only after providing an accessible X/Wayland display and the required input permissions; otherwise use a local environment attached to the game display.
+Codespaces containers are normally headless and cannot capture the host desktop or emit host keyboard events by default. Use `python bot.py --sim` for browser-terminal development. Run native mode in a Codespace only after providing an accessible X/Wayland display and the required input permissions; otherwise use a local environment attached to the game display.
