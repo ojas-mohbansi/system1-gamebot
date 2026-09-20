@@ -51,6 +51,17 @@ python bot.py --sim --capture-hz 100 --decision-hz 10 --decision-timeout 0.2
 
 Capture and decision work run independently. A bounded one-state handoff drops stale telemetry instead of growing memory, and a slow or failed decision falls back to `DO_NOTHING`. Logs include engine latency, state age, and the fallback reason.
 
+Phase 3 adds runtime safety controls:
+
+```bash
+python bot.py --sim \
+	--action-cooldown 0.15 \
+	--min-action-interval 0.05 \
+	--stop-file /tmp/system1-gamebot.stop
+```
+
+Native mode checks for an X11/Wayland display and a working `pynput` controller before starting. `Ctrl+C`, `SIGTERM`, or creating the configured stop file triggers an emergency stop. Keyboard actions are rate-limited and failed key events stop the runtime.
+
 ## Configuration
 
 `GameVision` defaults to the primary monitor. To target a smaller region, pass an `mss` monitor dictionary when constructing it:
