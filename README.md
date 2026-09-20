@@ -1,21 +1,58 @@
 # system1-gamebot
 
-A lightweight, modular gaming-bot pipeline:
+`system1-gamebot` is a small Python framework for experimenting with screen-driven game automation.
 
-1. **See:** `mss` captures a configured screen region and OpenCV extracts compact pixel telemetry.
-2. **Think:** TypeSafe System One's `Choice` primitive selects one action from a fixed option set.
-3. **Act:** `pynput` sends deterministic keyboard events.
+It follows a simple loop:
 
-## Requirements
+```text
+capture -> detect -> ask TypeSafe/Jev -> apply safety rules -> act
+```
 
-- Python 3.10 or newer
-- A graphical display accessible to `mss` and `pynput`
-- The official TypeSafe SDK (`typesafe-sdk==0.7.0`)
-- A `TYPESAFE_API_KEY` environment variable
+The project is designed to be easy to test in a headless GitHub Codespace before moving native input and screen capture to a real machine.
 
-The Python integration uses `TypeSafeClient.system_one()` with the `Choice` primitive. Jev is TypeSafe's System One model; this repository keeps the TypeSafe provider behind a small decision interface.
+## What works today
 
-## Setup
+- Headless simulator mode with a moving obstacle
+- TypeSafe System One `Choice` integration through `TypeSafeClient.system_one()`
+- Native `mss` capture and OpenCV detector scaffolding
+- Simulator, observation-only, and `pynput` input controllers
+- Profile-based monitor, detector, HSV, model, confidence, and key settings
+- Bounded latest-state handoff between capture and decision loops
+- Confidence gating, action cooldowns, emergency stop, and shutdown cleanup
+- Human-readable and JSON Lines telemetry
+- Dependency-free unit tests for the core behavior
+
+This is a reusable framework, not a plug-and-play bot for every game. Each game still needs a profile and usually a detector calibrated for its visuals.
+
+## Quick Start: Codespaces
+
+The simulator is the right first run in a browser terminal. It does not need a display, keyboard permissions, an API key, OpenCV, `mss`, or `pynput`.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python bot.py --sim
+```
+
+You should see simulated actions, confidence values, latency, fallback information, and a final runtime summary when the process stops.
+
+Inspect decisions without simulated or native input:
+
+```bash
+python bot.py --sim --observe-only
+```
+
+Use structured telemetry for scripts and benchmarks:
+
+```bash
+python bot.py --sim --jsonl
+```
+
+Stop the process with `Ctrl+C`.
+
+## Install Native Dependencies
+
+Native mode requires a real graphical session and input permissions. Create an environment and install the pinned packages:
 
 ```bash
 python -m venv .venv
@@ -24,124 +61,145 @@ python -m pip install -r requirements.txt
 export TYPESAFE_API_KEY="your-api-key"
 ```
 
-## Run
+The current requirements include:
 
-For a headless Codespace or browser terminal, use simulator mode:
+- `mss` for screen capture
+- `opencv-python-headless` for pixel processing
+- `pynput` for keyboard events
+- `typesafe-sdk` for TypeSafe System One
 
-```bash
-python bot.py --sim
-```
+The public TypeSafe Python API is `TypeSafeClient.system_one()` plus the `Choice` primitive. Jev is TypeSafe's flagship System One model, selected here as `jev-latest` by default.
 
-Simulator mode generates a moving center-lane obstacle, uses a deterministic local choice provider, and prints simulated keyboard actions. It does not require `TYPESAFE_API_KEY`, a graphical display, or native keyboard permissions.
+## Native Preflight
 
-Use observation-only mode to inspect decisions without sending keyboard events:
-
-```bash
-python bot.py --sim --observe-only
-```
-
-For native screen capture and keyboard events:
+Check display, monitor capture, OpenCV, and keyboard prerequisites before starting the bot:
 
 ```bash
-export TYPESAFE_API_KEY="your-api-key"
-python bot.py
+python bot.py --preflight --profile profiles/example_runner.json
 ```
 
-Check native prerequisites without starting the loop or sending actions:
+To skip keyboard initialization during the check:
 
 ```bash
-python bot.py --preflight --observe-only --profile profiles/example_runner.json
+python bot.py --preflight --observe-only \
+  --profile profiles/example_runner.json
 ```
 
-The default System One model is `jev-latest`; override it explicitly when needed:
+Headless Codespaces normally fail this check because the container cannot see the host desktop. That is expected; use `--sim` there or run native mode on a machine attached to the game display.
+
+## Native Run
+
+After preflight succeeds:
 
 ```bash
-python bot.py --model jev-latest
+python bot.py --profile profiles/example_runner.json
 ```
 
-Stop either loop with `Ctrl+C`. Each iteration logs the selected action, confidence, choice probabilities, and total capture-to-act latency in milliseconds at approximately 10 Hz.
-
-Runtime rates and the native decision timeout can be tuned without editing code:
+Use observation-only mode before enabling keyboard events:
 
 ```bash
-python bot.py --sim --capture-hz 100 --decision-hz 10 --decision-timeout 0.2
+python bot.py --observe-only --profile profiles/example_runner.json
 ```
 
-Capture and decision work run independently. A bounded one-state handoff drops stale telemetry instead of growing memory, and a slow or failed decision falls back to `DO_NOTHING`. Logs include engine latency, state age, and the fallback reason.
+## Runtime Controls
 
-Confidence can be used as an explicit safety policy. Decisions below the threshold become `DO_NOTHING`:
-
-```bash
-python bot.py --sim --min-confidence 0.90
-```
-
-The default threshold is `0.0`; configure a higher value per profile after measuring the target game.
-
-Phase 3 adds runtime safety controls:
+Capture and decisions run independently. The default configuration captures at 100 Hz and asks for decisions at 10 Hz. A one-slot handoff keeps only the newest state, so slow decisions cannot create an unbounded queue.
 
 ```bash
 python bot.py --sim \
-	--action-cooldown 0.15 \
-	--min-action-interval 0.05 \
-	--stop-file /tmp/system1-gamebot.stop
+  --capture-hz 100 \
+  --decision-hz 10 \
+  --decision-timeout 0.2 \
+  --min-confidence 0.90
 ```
 
-Native mode checks for an X11/Wayland display and a working `pynput` controller before starting. `Ctrl+C`, `SIGTERM`, or creating the configured stop file triggers an emergency stop. Keyboard actions are rate-limited and failed key events stop the runtime. Observation-only native mode skips keyboard initialization and suppresses all actions.
+Useful safety controls:
+
+```bash
+python bot.py --sim \
+  --action-cooldown 0.15 \
+  --min-action-interval 0.05 \
+  --stop-file /tmp/system1-gamebot.stop
+```
+
+`Ctrl+C`, `SIGTERM`, or creating the configured stop file requests an emergency stop. Native key failures also stop the runtime. Decisions below `--min-confidence` become `DO_NOTHING`.
 
 ## Game Profiles
 
-Use `--profile` to load a game-specific JSON profile without changing the runtime:
+Profiles keep game-specific details out of the main loop. The checked-in example is [profiles/example_runner.json](profiles/example_runner.json):
 
 ```bash
 python bot.py --sim --profile profiles/example_runner.json
 ```
 
-Example profile:
+A profile can define:
+
+- `monitor`: capture rectangle
+- `model`: TypeSafe model, default `jev-latest`
+- `actions`: logical actions mapped to keys
+- `detector`: currently `green_obstacle`
+- `detector_config`: HSV bounds, ROI, and minimum contour area
+- `min_confidence`: action safety threshold
+
+Example shape:
 
 ```json
 {
-	"name": "example-runner",
-	"monitor": {"left": 0, "top": 0, "width": 1280, "height": 720},
-	"actions": {
-		"JUMP": "space",
-		"DODGE_LEFT": "left",
-		"DODGE_RIGHT": "right",
-		"DO_NOTHING": "none"
-	},
-	"detector": "green_obstacle",
-	"detector_config": {
-		"hsv_lower": [35, 90, 140],
-		"hsv_upper": [90, 255, 255],
-		"min_area": 12,
-		"roi_top_fraction": 0.333
-	}
+  "name": "example-runner",
+  "model": "jev-latest",
+  "min_confidence": 0.0,
+  "monitor": {"left": 0, "top": 0, "width": 1280, "height": 720},
+  "actions": {
+    "JUMP": "space",
+    "DODGE_LEFT": "left",
+    "DODGE_RIGHT": "right",
+    "DO_NOTHING": "none"
+  },
+  "detector": "green_obstacle",
+  "detector_config": {
+    "hsv_lower": [35, 90, 140],
+    "hsv_upper": [90, 255, 255],
+    "min_area": 12,
+    "roi_top_fraction": 0.333
+  }
 }
 ```
 
-The current detector adapter is `green_obstacle`. Profiles isolate per-game monitor geometry, keyboard mapping, and HSV tuning while keeping the capture, decision, safety, and telemetry runtime shared. Detectors implement a common interface, and input backends can be simulator, observation-only, or native `pynput`.
+## Project Layout
+
+- `bot.py`: runtime orchestration, scheduling, safety, CLI, and telemetry
+- `vision.py`: capture plus detector interfaces
+- `decision.py`: simulator and TypeSafe decision providers
+- `input.py`: simulator, observation-only, and native input backends
+- `profiles.py`: profile loading and validation
+- `profiles/`: checked-in game profiles
+- `tests/`: dependency-free regression tests
 
 ## Tests
 
-Run the dependency-free verification suite from the repository root:
+Run the test suite from the repository root:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-The suite covers simulated vision state changes, profile loading, bounded state handoff, action cooldowns, simulated actuation, fallback decisions, and the TypeSafe response adapter with a fake client.
+Also useful before committing:
 
-## Configuration
-
-`GameVision` defaults to the primary monitor. To target a smaller region, pass an `mss` monitor dictionary when constructing it:
-
-```python
-from vision import GameVision
-
-vision = GameVision({"left": 0, "top": 0, "width": 1280, "height": 720})
+```bash
+python -m py_compile bot.py decision.py input.py profiles.py vision.py
+git diff --check
 ```
 
-The sample detector tracks bright green pixels in the lower two-thirds of the capture and serializes threat distance, lane position, speed, and visibility for the decision step. Tune the HSV bounds and region in `vision.py` for the target game.
+The tests cover simulator state changes, profile validation, bounded state handoff, input suppression, cooldowns, fallback decisions, and TypeSafe response parsing with a fake client.
 
-## GitHub Codespaces
+## Honest Scope
 
-Codespaces containers are normally headless and cannot capture the host desktop or emit host keyboard events by default. Use `python bot.py --sim` for browser-terminal development. Run native mode in a Codespace only after providing an accessible X/Wayland display and the required input permissions; otherwise use a local environment attached to the game display.
+This repository is a foundation for a universal architecture, not a universal game intelligence system. Real support for a game requires:
+
+1. A calibrated screen region.
+2. A detector that understands that game's visuals.
+3. A profile mapping logical actions to controls.
+4. A confidence and timing policy tested against real outcomes.
+5. A display, input backend, and permissions that the runtime can access.
+
+The simulator is fully usable in Codespaces. Native mode and live TypeSafe calls still require the external environment described above, and the full 100 Hz see-think-act path must be measured on target hardware rather than assumed.

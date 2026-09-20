@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import argparse
+import json
 import signal
 import threading
 import time
@@ -25,17 +26,35 @@ class StateSnapshot:
     captured_at: float
 
 
+class RuntimeStats:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+
+    def increment(self, name: str) -> None:
+        with self._lock:
+            self._counts[name] = self._counts.get(name, 0) + 1
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counts)
+
+
 class LatestStateQueue:
     """One-slot handoff so stale states never build up in memory."""
 
-    def __init__(self) -> None:
+    def __init__(self, stats: RuntimeStats | None = None) -> None:
         self._queue: Queue[StateSnapshot] = Queue(maxsize=1)
+        self._stats = stats
 
     def put_latest(self, snapshot: StateSnapshot) -> None:
         try:
             self._queue.get_nowait()
         except Empty:
             pass
+        else:
+            if self._stats is not None:
+                self._stats.increment("states_dropped")
         try:
             self._queue.put_nowait(snapshot)
         except Exception:
@@ -141,12 +160,14 @@ def capture_loop(
     states: LatestStateQueue,
     stop: threading.Event,
     capture_hz: float,
+    stats: RuntimeStats,
 ) -> None:
     period = 1.0 / capture_hz
     while not stop.is_set():
         started_at = time.perf_counter()
         try:
             vision.capture_and_process_frame()
+            stats.increment("captures")
             states.put_latest(
                 StateSnapshot(
                     state=vision.get_serialized_state(),
@@ -155,6 +176,7 @@ def capture_loop(
                 )
             )
         except Exception as error:
+            stats.increment("capture_errors")
             print(f"[EYES FALLBACK] Capture stopped: {error}", flush=True)
             stop.set()
             return
@@ -176,12 +198,15 @@ def decision_loop(
     profile: GameProfile,
     min_confidence: float,
     limiter: ActionLimiter,
+    stats: RuntimeStats,
+    jsonl: bool,
 ) -> None:
     period = 1.0 / decision_hz
     pending: Future[Decision] | None = None
     pending_started = 0.0
 
-    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="system1-decision") as executor:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="system1-decision")
+    try:
         while not stop.is_set():
             cycle_started = time.perf_counter()
             try:
@@ -217,9 +242,11 @@ def decision_loop(
 
             if decision is None:
                 decision = fallback_decision(fallback_reason)
+                stats.increment("fallbacks")
             elif decision.confidence < min_confidence:
                 fallback_reason = "low_confidence"
                 decision = fallback_decision(fallback_reason)
+                stats.increment("fallbacks")
 
             action_sent = actuate(
                 controller,
@@ -229,18 +256,35 @@ def decision_loop(
                 limiter,
                 stop,
             )
+            stats.increment("decisions")
+            stats.increment("actions_sent" if action_sent else "actions_blocked")
             engine_latency_ms = (time.perf_counter() - snapshot.started_at) * 1000
             state_age_ms = (time.perf_counter() - snapshot.captured_at) * 1000
-            print(
-                f"action={decision.action} confidence={decision.confidence:.6f} "
-                f"probabilities={decision.probabilities} "
-                f"engine_latency_ms={engine_latency_ms:.3f} "
-                f"state_age_ms={state_age_ms:.3f} "
-                f"action_sent={str(action_sent).lower()} "
-                f"fallback={fallback_reason or 'none'}",
-                flush=True,
-            )
+            event = {
+                "event": "decision",
+                "action": decision.action,
+                "confidence": decision.confidence,
+                "probabilities": decision.probabilities,
+                "engine_latency_ms": round(engine_latency_ms, 3),
+                "state_age_ms": round(state_age_ms, 3),
+                "action_sent": action_sent,
+                "fallback": fallback_reason or "none",
+            }
+            if jsonl:
+                print(json.dumps(event, separators=(",", ":")), flush=True)
+            else:
+                print(
+                    f"action={decision.action} confidence={decision.confidence:.6f} "
+                    f"probabilities={decision.probabilities} "
+                    f"engine_latency_ms={engine_latency_ms:.3f} "
+                    f"state_age_ms={state_age_ms:.3f} "
+                    f"action_sent={str(action_sent).lower()} "
+                    f"fallback={fallback_reason or 'none'}",
+                    flush=True,
+                )
             stop.wait(max(0.0, period - (time.perf_counter() - cycle_started)))
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def actuate(
@@ -286,6 +330,7 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="check native display/capture/input prerequisites and exit",
     )
+    parser.add_argument("--jsonl", action="store_true")
     return parser.parse_args()
 
 
@@ -339,7 +384,8 @@ def main() -> None:
     stop = threading.Event()
     install_emergency_signals(stop)
     limiter = ActionLimiter(args.min_action_interval, args.action_cooldown)
-    states = LatestStateQueue()
+    stats = RuntimeStats()
+    states = LatestStateQueue(stats)
     stop_file_thread = threading.Thread(
         target=stop_file_loop,
         args=(args.stop_file, stop),
@@ -350,7 +396,7 @@ def main() -> None:
         with GameVision(simulator_mode=args.sim) as vision:
             capture_thread = threading.Thread(
                 target=capture_loop,
-                args=(vision, states, stop, args.capture_hz),
+                args=(vision, states, stop, args.capture_hz, stats),
                 name="system1-capture",
                 daemon=True,
             )
@@ -367,6 +413,8 @@ def main() -> None:
                     profile,
                     min_confidence,
                     limiter,
+                    stats,
+                    args.jsonl,
                 ),
                 name="system1-decision-loop",
                 daemon=True,
@@ -392,6 +440,7 @@ def main() -> None:
         if callable(close):
             close()
         controller.release_all()
+        print(f"[STATS] {stats.snapshot()}", flush=True)
 
 
 if __name__ == "__main__":
