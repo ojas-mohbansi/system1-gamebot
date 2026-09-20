@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from profiles import GameProfile
 
@@ -14,6 +14,62 @@ class VisionState:
     lane_position: float
     speed: float
     threat_visible: bool
+
+
+class Detector(Protocol):
+    def detect(self, frame: Any) -> VisionState:
+        """Convert one frame into compact telemetry."""
+
+
+class NoOpDetector:
+    def detect(self, _frame: Any) -> VisionState:
+        return VisionState(0, 0.5, 0.0, False)
+
+
+class GreenObstacleDetector:
+    def __init__(self, cv2_module: Any, numpy_module: Any, config: dict[str, Any]) -> None:
+        self._cv2 = cv2_module
+        self._np = numpy_module
+        self._config = config
+        self._previous_distance: int | None = None
+
+    def detect(self, frame: Any) -> VisionState:
+        height, width = frame.shape[:2]
+        hsv = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2HSV)
+        mask = self._cv2.inRange(
+            hsv,
+            self._np.array(self._config["hsv_lower"], dtype=self._np.uint8),
+            self._np.array(self._config["hsv_upper"], dtype=self._np.uint8),
+        )
+        roi_top_fraction = float(self._config["roi_top_fraction"])
+        mask[: int(height * roi_top_fraction), :] = 0
+        contours, _ = self._cv2.findContours(
+            mask,
+            self._cv2.RETR_EXTERNAL,
+            self._cv2.CHAIN_APPROX_SIMPLE,
+        )
+        candidates = [
+            contour
+            for contour in contours
+            if self._cv2.contourArea(contour) >= float(self._config["min_area"])
+        ]
+        if not candidates:
+            self._previous_distance = None
+            return VisionState(0, 0.5, 0.0, False)
+
+        obstacle = max(candidates, key=self._cv2.contourArea)
+        x, _, obstacle_width, _ = self._cv2.boundingRect(obstacle)
+        center_x = x + obstacle_width / 2
+        distance = max(width - int(center_x), 0)
+        previous = self._previous_distance
+        speed = 0.0 if previous is None else round(float(previous - distance), 3)
+        self._previous_distance = distance
+        return VisionState(
+            threat_distance=distance,
+            lane_position=round(float(center_x / max(width, 1)), 3),
+            speed=speed,
+            threat_visible=True,
+        )
 
 
 class GameVision:
@@ -30,6 +86,7 @@ class GameVision:
         self._sct: Any = None
         self._cv2: Any = None
         self._np: Any = None
+        self._detector: Detector = NoOpDetector()
         self._monitor = monitor or dict(self.profile.monitor or {})
         self._simulated_distance = 100
         if not simulator_mode:
@@ -41,6 +98,12 @@ class GameVision:
             self._np = np
             self._sct = mss.mss()
             self._monitor = monitor or dict(self.profile.monitor or self._sct.monitors[1])
+            if self.profile.detector == "green_obstacle":
+                self._detector = GreenObstacleDetector(
+                    cv2,
+                    np,
+                    self.profile.detector_config,
+                )
         self._previous_threat_distance: int | None = None
         self._state = VisionState(0, 0.5, 0.0, False)
 
@@ -57,7 +120,7 @@ class GameVision:
             raise RuntimeError("Native screen capture is not initialized.")
         screenshot = self._sct.grab(self._monitor)
         frame = self._np.asarray(screenshot, dtype=self._np.uint8)[:, :, :3]
-        self._update_state(frame)
+        self._state = self._detector.detect(frame)
         return frame
 
     def _capture_simulated_frame(self) -> bytearray:
@@ -77,51 +140,6 @@ class GameVision:
         if self._simulated_distance < 5:
             self._simulated_distance = 100
         return frame
-
-    def _update_state(self, frame: Any) -> None:
-        if self.profile.detector != "green_obstacle":
-            raise ValueError(f"Unsupported detector: {self.profile.detector}")
-        height, width = frame.shape[:2]
-        hsv = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2HSV)
-
-        # Yeh mask bright green obstacle/health-bar pixels ko isolate karta hai.
-        config = self.profile.detector_config
-        mask = self._cv2.inRange(
-            hsv,
-            self._np.array(config["hsv_lower"], dtype=self._np.uint8),
-            self._np.array(config["hsv_upper"], dtype=self._np.uint8),
-        )
-        roi_top_fraction = float(config["roi_top_fraction"])
-        mask[: int(height * roi_top_fraction), :] = 0
-        contours, _ = self._cv2.findContours(
-            mask,
-            self._cv2.RETR_EXTERNAL,
-            self._cv2.CHAIN_APPROX_SIMPLE,
-        )
-
-        min_area = float(config["min_area"])
-        candidates = [
-            contour for contour in contours if self._cv2.contourArea(contour) >= min_area
-        ]
-        if not candidates:
-            self._state = VisionState(0, 0.5, 0.0, False)
-            return
-
-        obstacle = max(candidates, key=self._cv2.contourArea)
-        x, _, obstacle_width, _ = self._cv2.boundingRect(obstacle)
-        center_x = x + obstacle_width / 2
-        threat_distance = max(width - int(center_x), 0)
-        lane_position = round(float(center_x / max(width, 1)), 3)
-
-        previous = self._previous_threat_distance
-        speed = 0.0 if previous is None else round(float(previous - threat_distance), 3)
-        self._previous_threat_distance = threat_distance
-        self._state = VisionState(
-            threat_distance=threat_distance,
-            lane_position=lane_position,
-            speed=speed,
-            threat_visible=True,
-        )
 
     def get_serialized_state(self) -> str:
         """Return a compact, stable text representation for the decision model."""

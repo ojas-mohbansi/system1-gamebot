@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from bot import ActionLimiter, LatestStateQueue, StateSnapshot, actuate, fallback_decision
 from decision import TypeSafeDecisionProvider
+from input import NullController, SimulatorController
 from profiles import GameProfile, load_profile
 from vision import GameVision
 
@@ -23,10 +24,12 @@ class FakeClient:
         self.closed = False
         self.state = None
         self.questions = None
+        self.model = None
 
-    def system_one(self, *, state, questions):
+    def system_one(self, *, state, questions, model):
         self.state = state
         self.questions = questions
+        self.model = model
         answer = SimpleNamespace(
             choice="JUMP",
             confidence=0.91,
@@ -69,6 +72,14 @@ class System1Tests(unittest.TestCase):
             path.write_text('{"name": "from-file"}', encoding="utf-8")
             self.assertEqual(load_profile(str(path)).name, "from-file")
 
+    def test_profile_rejects_invalid_detector_and_bounds(self):
+        with self.assertRaises(ValueError):
+            GameProfile.from_dict({"detector": "unknown"})
+        with self.assertRaises(ValueError):
+            GameProfile.from_dict({"detector_config": {"roi_top_fraction": 1.0}})
+        with self.assertRaises(ValueError):
+            GameProfile.from_dict({"actions": {"JUMP": "invalid-key"}})
+
     def test_latest_state_queue_drops_stale_state(self):
         states = LatestStateQueue()
         states.put_latest(StateSnapshot("old", 0.0, 0.0))
@@ -86,7 +97,7 @@ class System1Tests(unittest.TestCase):
         profile = GameProfile.from_dict({"actions": {"JUMP": "x"}})
         with contextlib.redirect_stdout(output):
             sent = actuate(
-                None,
+                SimulatorController(profile),
                 "JUMP",
                 True,
                 profile,
@@ -96,10 +107,21 @@ class System1Tests(unittest.TestCase):
         self.assertTrue(sent)
         self.assertIn("Pressing X key", output.getvalue())
 
+    def test_observation_controller_suppresses_input(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            sent = NullController().press("JUMP")
+        self.assertFalse(sent)
+        self.assertIn("Suppressed JUMP", output.getvalue())
+
     def test_fallback_is_do_nothing(self):
         decision = fallback_decision("timeout")
         self.assertEqual(decision.action, "DO_NOTHING")
         self.assertEqual(decision.confidence, 0.0)
+
+    def test_profile_rejects_invalid_confidence(self):
+        with self.assertRaises(ValueError):
+            GameProfile.from_dict({"min_confidence": 1.1})
 
     def test_typesafe_response_adapter(self):
         fake_client = FakeClient()
@@ -115,6 +137,7 @@ class System1Tests(unittest.TestCase):
         self.assertAlmostEqual(decision.confidence, 0.91)
         self.assertEqual(fake_client.state["game_state"], "Obstacle in Center lane, distance: 20 px")
         self.assertEqual(set(fake_client.questions), {"action"})
+        self.assertEqual(fake_client.model, "jev-latest")
         self.assertTrue(fake_client.closed)
 
 

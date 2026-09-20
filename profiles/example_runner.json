@@ -1,0 +1,24 @@
+{
+  "name": "example-runner",
+  "model": "jev-latest",
+  "min_confidence": 0.0,
+  "monitor": {
+    "left": 0,
+    "top": 0,
+    "width": 1280,
+    "height": 720
+  },
+  "actions": {
+    "JUMP": "space",
+    "DODGE_LEFT": "left",
+    "DODGE_RIGHT": "right",
+    "DO_NOTHING": "none"
+  },
+  "detector": "green_obstacle",
+  "detector_config": {
+    "hsv_lower": [35, 90, 140],
+    "hsv_upper": [90, 255, 255],
+    "min_area": 12,
+    "roi_top_fraction": 0.333
+  }
+}

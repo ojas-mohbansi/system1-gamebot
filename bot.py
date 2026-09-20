@@ -13,6 +13,7 @@ from queue import Empty, Queue
 
 from decision import DecisionProvider, SimulatorDecisionProvider, TypeSafeDecisionProvider
 from decision import Decision
+from input import InputController, NullController, PynputController, SimulatorController
 from profiles import GameProfile, load_profile
 from vision import GameVision
 
@@ -85,6 +86,37 @@ def create_keyboard_controller() -> object:
         ) from error
 
 
+def run_native_preflight(profile: GameProfile, check_keyboard: bool) -> None:
+    require_native_display()
+    try:
+        import cv2
+        import mss
+    except Exception as error:
+        raise RuntimeError(
+            "Native preflight needs opencv-python-headless and mss installed."
+        ) from error
+
+    with mss.mss() as capture:
+        monitors = capture.monitors
+        monitor = profile.monitor or monitors[1]
+        capture.grab(monitor)
+    print(f"[PREFLIGHT] display=ok monitors={len(monitors) - 1}", flush=True)
+    print(f"[PREFLIGHT] opencv={cv2.__version__} capture=ok", flush=True)
+
+    if check_keyboard:
+        try:
+            from pynput import keyboard
+
+            keyboard.Controller()
+        except Exception as error:
+            raise RuntimeError(
+                "Native keyboard preflight failed; use --observe-only or fix permissions."
+            ) from error
+        print("[PREFLIGHT] keyboard=ok", flush=True)
+    else:
+        print("[PREFLIGHT] keyboard=skipped", flush=True)
+
+
 def install_emergency_signals(stop: threading.Event) -> None:
     def handle_signal(signum: int, _frame: object) -> None:
         print(f"[EMERGENCY STOP] signal={signum}", flush=True)
@@ -112,14 +144,14 @@ def capture_loop(
 ) -> None:
     period = 1.0 / capture_hz
     while not stop.is_set():
-        started_at = time.time()
+        started_at = time.perf_counter()
         try:
             vision.capture_and_process_frame()
             states.put_latest(
                 StateSnapshot(
                     state=vision.get_serialized_state(),
                     started_at=started_at,
-                    captured_at=time.time(),
+                    captured_at=time.perf_counter(),
                 )
             )
         except Exception as error:
@@ -142,6 +174,7 @@ def decision_loop(
     decision_hz: float,
     decision_timeout: float,
     profile: GameProfile,
+    min_confidence: float,
     limiter: ActionLimiter,
 ) -> None:
     period = 1.0 / decision_hz
@@ -150,7 +183,7 @@ def decision_loop(
 
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="system1-decision") as executor:
         while not stop.is_set():
-            cycle_started = time.time()
+            cycle_started = time.perf_counter()
             try:
                 snapshot = states.get(timeout=period)
             except Empty:
@@ -166,13 +199,13 @@ def decision_loop(
                 pending = None
 
             if pending is not None:
-                if time.time() - pending_started >= decision_timeout:
+                if time.perf_counter() - pending_started >= decision_timeout:
                     fallback_reason = "decision_timeout"
                 else:
                     fallback_reason = "decision_in_flight"
             else:
                 pending = executor.submit(provider.decide, snapshot.state)
-                pending_started = time.time()
+                pending_started = time.perf_counter()
                 try:
                     decision = pending.result(timeout=min(decision_timeout, period))
                     pending = None
@@ -180,9 +213,12 @@ def decision_loop(
                     fallback_reason = "decision_timeout"
                 except Exception as error:
                     pending = None
-                    fallback_reason = type(error).__name__
+                    fallback_reason = getattr(error, "category", type(error).__name__)
 
             if decision is None:
+                decision = fallback_decision(fallback_reason)
+            elif decision.confidence < min_confidence:
+                fallback_reason = "low_confidence"
                 decision = fallback_decision(fallback_reason)
 
             action_sent = actuate(
@@ -193,8 +229,8 @@ def decision_loop(
                 limiter,
                 stop,
             )
-            engine_latency_ms = (time.time() - snapshot.started_at) * 1000
-            state_age_ms = (time.time() - snapshot.captured_at) * 1000
+            engine_latency_ms = (time.perf_counter() - snapshot.started_at) * 1000
+            state_age_ms = (time.perf_counter() - snapshot.captured_at) * 1000
             print(
                 f"action={decision.action} confidence={decision.confidence:.6f} "
                 f"probabilities={decision.probabilities} "
@@ -204,11 +240,11 @@ def decision_loop(
                 f"fallback={fallback_reason or 'none'}",
                 flush=True,
             )
-            stop.wait(max(0.0, period - (time.time() - cycle_started)))
+            stop.wait(max(0.0, period - (time.perf_counter() - cycle_started)))
 
 
 def actuate(
-    controller: object,
+    controller: InputController,
     action: str,
     simulator_mode: bool,
     profile: GameProfile,
@@ -220,43 +256,8 @@ def actuate(
     if not limiter.allows(action):
         print(f"[HANDS SAFETY] Cooldown blocked {action}.", flush=True)
         return False
-    if simulator_mode:
-        key_name = profile.actions.get(action, "none").upper()
-        if key_name != "NONE":
-            print(f"[SIM HANDS] Pressing {key_name} key...", flush=True)
-        else:
-            print("[SIM HANDS] No key press.", flush=True)
-        return action == "DO_NOTHING" or action in {
-            "JUMP",
-            "DODGE_LEFT",
-            "DODGE_RIGHT",
-        }
-
-    if controller is None:
-        print(f"[HANDS FALLBACK] Could not press key for {action}.", flush=True)
-        return False
-
-    from pynput import keyboard
-
-    key_name = profile.actions.get(action, "none").lower()
-    named_keys = {
-        "space": keyboard.Key.space,
-        "left": keyboard.Key.left,
-        "right": keyboard.Key.right,
-        "up": keyboard.Key.up,
-        "down": keyboard.Key.down,
-        "enter": keyboard.Key.enter,
-        "esc": keyboard.Key.esc,
-    }
-    key = named_keys.get(key_name)
-    if key is None and len(key_name) == 1:
-        key = keyboard.KeyCode.from_char(key_name)
-    if key is None:
-        return False
     try:
-        controller.press(key)
-        controller.release(key)
-        return True
+        return controller.press(action)
     except Exception as error:
         print(f"[HANDS FALLBACK] {error}", flush=True)
         stop.set()
@@ -277,12 +278,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--min-action-interval", type=float, default=0.05)
     parser.add_argument("--stop-file", default=None)
     parser.add_argument("--profile", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--observe-only", action="store_true")
+    parser.add_argument("--min-confidence", type=float, default=None)
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="check native display/capture/input prerequisites and exit",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
     profile = load_profile(args.profile)
+    min_confidence = (
+        profile.min_confidence if args.min_confidence is None else args.min_confidence
+    )
     if any(
         value <= 0
         for value in (
@@ -294,16 +306,35 @@ def main() -> None:
         )
     ):
         raise ValueError("All rates, cooldowns, and timeouts must be positive.")
+    if not 0 <= min_confidence <= 1:
+        raise ValueError("Minimum confidence must be in [0, 1].")
+    if args.preflight:
+        run_native_preflight(profile, check_keyboard=not args.observe_only)
+        return
     api_key = os.getenv("TYPESAFE_API_KEY")
-    if args.sim:
+    if args.observe_only:
+        provider = SimulatorDecisionProvider() if args.sim else None
+        if provider is None:
+            if not api_key:
+                raise RuntimeError("TYPESAFE_API_KEY is required outside simulator mode.")
+            require_native_display()
+            provider = TypeSafeDecisionProvider(
+                api_key=api_key,
+                model=args.model or profile.model,
+            )
+        controller: InputController = NullController()
+    elif args.sim:
         provider: DecisionProvider = SimulatorDecisionProvider()
-        controller = None
+        controller: InputController = SimulatorController(profile)
     else:
         require_native_display()
         if not api_key:
             raise RuntimeError("TYPESAFE_API_KEY is required outside simulator mode.")
-        provider = TypeSafeDecisionProvider(api_key=api_key)
-        controller = create_keyboard_controller()
+        provider = TypeSafeDecisionProvider(
+            api_key=api_key,
+            model=args.model or profile.model,
+        )
+        controller = NullController() if args.observe_only else PynputController(profile)
 
     stop = threading.Event()
     install_emergency_signals(stop)
@@ -334,6 +365,7 @@ def main() -> None:
                     args.decision_hz,
                     args.decision_timeout,
                     profile,
+                    min_confidence,
                     limiter,
                 ),
                 name="system1-decision-loop",
@@ -359,6 +391,7 @@ def main() -> None:
         close = getattr(provider, "close", None)
         if callable(close):
             close()
+        controller.release_all()
 
 
 if __name__ == "__main__":

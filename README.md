@@ -3,7 +3,7 @@
 A lightweight, modular gaming-bot pipeline:
 
 1. **See:** `mss` captures a configured screen region and OpenCV extracts compact pixel telemetry.
-2. **Think:** the Jev `choice` primitive selects one action from a fixed option set.
+2. **Think:** TypeSafe System One's `Choice` primitive selects one action from a fixed option set.
 3. **Act:** `pynput` sends deterministic keyboard events.
 
 ## Requirements
@@ -13,7 +13,7 @@ A lightweight, modular gaming-bot pipeline:
 - The official TypeSafe SDK (`typesafe-sdk==0.7.0`)
 - A `TYPESAFE_API_KEY` environment variable
 
-The Python integration uses `TypeSafeClient.system_one()` with the `Choice` primitive. The old `typesafe-ai` package is only a PyPI redirect shim and does not provide `jev.Client`.
+The Python integration uses `TypeSafeClient.system_one()` with the `Choice` primitive. Jev is TypeSafe's System One model; this repository keeps the TypeSafe provider behind a small decision interface.
 
 ## Setup
 
@@ -34,11 +34,29 @@ python bot.py --sim
 
 Simulator mode generates a moving center-lane obstacle, uses a deterministic local choice provider, and prints simulated keyboard actions. It does not require `TYPESAFE_API_KEY`, a graphical display, or native keyboard permissions.
 
+Use observation-only mode to inspect decisions without sending keyboard events:
+
+```bash
+python bot.py --sim --observe-only
+```
+
 For native screen capture and keyboard events:
 
 ```bash
 export TYPESAFE_API_KEY="your-api-key"
 python bot.py
+```
+
+Check native prerequisites without starting the loop or sending actions:
+
+```bash
+python bot.py --preflight --observe-only --profile profiles/example_runner.json
+```
+
+The default System One model is `jev-latest`; override it explicitly when needed:
+
+```bash
+python bot.py --model jev-latest
 ```
 
 Stop either loop with `Ctrl+C`. Each iteration logs the selected action, confidence, choice probabilities, and total capture-to-act latency in milliseconds at approximately 10 Hz.
@@ -51,6 +69,14 @@ python bot.py --sim --capture-hz 100 --decision-hz 10 --decision-timeout 0.2
 
 Capture and decision work run independently. A bounded one-state handoff drops stale telemetry instead of growing memory, and a slow or failed decision falls back to `DO_NOTHING`. Logs include engine latency, state age, and the fallback reason.
 
+Confidence can be used as an explicit safety policy. Decisions below the threshold become `DO_NOTHING`:
+
+```bash
+python bot.py --sim --min-confidence 0.90
+```
+
+The default threshold is `0.0`; configure a higher value per profile after measuring the target game.
+
 Phase 3 adds runtime safety controls:
 
 ```bash
@@ -60,7 +86,7 @@ python bot.py --sim \
 	--stop-file /tmp/system1-gamebot.stop
 ```
 
-Native mode checks for an X11/Wayland display and a working `pynput` controller before starting. `Ctrl+C`, `SIGTERM`, or creating the configured stop file triggers an emergency stop. Keyboard actions are rate-limited and failed key events stop the runtime.
+Native mode checks for an X11/Wayland display and a working `pynput` controller before starting. `Ctrl+C`, `SIGTERM`, or creating the configured stop file triggers an emergency stop. Keyboard actions are rate-limited and failed key events stop the runtime. Observation-only native mode skips keyboard initialization and suppresses all actions.
 
 ## Game Profiles
 
@@ -92,7 +118,7 @@ Example profile:
 }
 ```
 
-The current detector adapter is `green_obstacle`. Profiles isolate per-game monitor geometry, keyboard mapping, and HSV tuning while keeping the capture, decision, safety, and telemetry runtime shared.
+The current detector adapter is `green_obstacle`. Profiles isolate per-game monitor geometry, keyboard mapping, and HSV tuning while keeping the capture, decision, safety, and telemetry runtime shared. Detectors implement a common interface, and input backends can be simulator, observation-only, or native `pynput`.
 
 ## Tests
 

@@ -22,6 +22,14 @@ class DecisionProvider(Protocol):
         """Choose one safe action for the current serialized state."""
 
 
+class DecisionProviderError(RuntimeError):
+    """A categorized failure from the TypeSafe decision provider."""
+
+    def __init__(self, category: str, message: str) -> None:
+        super().__init__(message)
+        self.category = category
+
+
 class SimulatorDecisionProvider:
     """Local provider so simulator mode needs no network or API key."""
 
@@ -40,6 +48,7 @@ class TypeSafeDecisionProvider:
         self,
         api_key: str,
         timeout: float = 0.2,
+        model: str = "jev-latest",
         client: Any = None,
         choice_type: Any = None,
     ) -> None:
@@ -49,9 +58,11 @@ class TypeSafeDecisionProvider:
             choice_type = choice_type or Choice
             client = client or TypeSafeClient(
                 api_key=api_key,
+                model=model,
                 timeout=timeout,
                 retry=RetryPolicy(max_retries=0),
             )
+        self._model = model
         self._choice_type = choice_type
         self._client = client
 
@@ -65,10 +76,15 @@ class TypeSafeDecisionProvider:
                 "DO_NOTHING": "Take no action because no immediate threat is present.",
             },
         )
-        response = self._client.system_one(
-            state={"game_state": state},
-            questions={"action": question},
-        )
+        try:
+            response = self._client.system_one(
+                state={"game_state": state},
+                questions={"action": question},
+                model=self._model,
+            )
+        except Exception as error:
+            category = type(error).__name__
+            raise DecisionProviderError(category, str(error)) from error
         answer = response.choices.get("action")
         if answer is None:
             raise RuntimeError("TypeSafe returned no action answer.")
