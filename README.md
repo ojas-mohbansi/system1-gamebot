@@ -43,6 +43,14 @@ python bot.py
 
 Stop either loop with `Ctrl+C`. Each iteration logs the selected action, confidence, choice probabilities, and total capture-to-act latency in milliseconds at approximately 10 Hz.
 
+Runtime rates and the native decision timeout can be tuned without editing code:
+
+```bash
+python bot.py --sim --capture-hz 100 --decision-hz 10 --decision-timeout 0.2
+```
+
+Capture and decision work run independently. A bounded one-state handoff drops stale telemetry instead of growing memory, and a slow or failed decision falls back to `DO_NOTHING`. Logs include engine latency, state age, and the fallback reason.
+
 ## Configuration
 
 `GameVision` defaults to the primary monitor. To target a smaller region, pass an `mss` monitor dictionary when constructing it:

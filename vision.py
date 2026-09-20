@@ -56,12 +56,13 @@ class GameVision:
         self._update_state(frame)
         return frame
 
-    def _capture_simulated_frame(self) -> list[list[list[int]]]:
+    def _capture_simulated_frame(self) -> bytearray:
         distance = self._simulated_distance
-        frame = [[[0, 0, 0] for _ in range(320)] for _ in range(180)]
-        for row in frame[100:130]:
-            for pixel in row[155:165]:
-                pixel[:] = [0, 220, 0]
+        frame = bytearray(180 * 320 * 3)
+        for row in range(100, 130):
+            for column in range(155, 165):
+                pixel = (row * 320 + column) * 3
+                frame[pixel : pixel + 3] = bytes((0, 220, 0))
         self._state = VisionState(
             threat_distance=distance,
             lane_position=0.5,
