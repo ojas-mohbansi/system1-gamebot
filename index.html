@@ -1,0 +1,3150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>system1-gamebot — see, think, act</title>
+<meta name="description" content="system1-gamebot is a Python framework that captures a screen region, detects a threat, asks a TypeSafe System One model for one action, applies safety rules, then presses a key. Simulator mode runs headless with no display, API key or install.">
+<meta name="author" content="Ojas Mohbansi">
+<meta name="color-scheme" content="light">
+<link rel="canonical" href="https://ojas-mohbansi.github.io/system1-gamebot/">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="system1-gamebot">
+<meta property="og:title" content="system1-gamebot — see, think, act">
+<meta property="og:description" content="A small Python framework for screen-driven game automation: capture, detect, decide, gate, act. Simulator mode runs headless.">
+<meta property="og:url" content="https://ojas-mohbansi.github.io/system1-gamebot/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="system1-gamebot — see, think, act">
+<meta name="twitter:description" content="A small Python framework for screen-driven game automation. Simulator mode runs headless.">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%23101534'/%3E%3Crect x='2' y='2' width='12' height='12' fill='%23fcbc00'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23e45c10'/%3E%3Crect x='6' y='6' width='2' height='2' fill='%23101534'/%3E%3Crect x='9' y='6' width='1' height='2' fill='%23101534'/%3E%3Crect x='6' y='10' width='4' height='1' fill='%23101534'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&family=Press+Start+2P&display=swap">
+<style>
+/* ==========================================================================
+   system1-gamebot — landing page visual system
+   ---------------------------------------------------------------------------
+   Rules of the house:
+     · nothing is round. depth comes from 4px two-tone bevels, not blur.
+     · everything snaps to an 8px grid, because tiles do.
+     · Press Start 2P is a HUD face only — never body copy.
+     · glass appears in exactly two places: the fixed HUD bar and the ROI
+       scan overlay. Both sit *on top of* the scene, which is the only place
+       transparency makes sense here.
+   ========================================================================== */
+
+/* --- tokens --------------------------------------------------------------- */
+
+:root {
+  /* foundation (from the brief) */
+  --sky:        #5c94fc;
+  --brick:      #e45c10;
+  --coin:       #fcbc00;
+
+  /* supporting */
+  --ink:        #101534;   /* deep navy, stands in for black everywhere */
+  --ink-2:      #232c5c;
+  --cloud:      #fbfbf2;   /* cloud white */
+  --cloud-2:    #e8e8dc;
+  --brown:      #7a3b12;   /* dark brown, ground */
+  --brown-2:    #4a2109;
+  --leaf:       #2fa34a;   /* foliage */
+  --leaf-2:     #1a6b2f;
+  --gray:       #8e97ad;   /* muted UI gray */
+  --gray-2:     #5b6379;
+
+  /* derived */
+  --sky-hi:     #8cb4ff;
+  --sky-lo:     #3f74d8;
+  --brick-hi:   #ff8544;
+  --brick-lo:   #a23a05;
+  --coin-lo:    #b07d00;
+
+  /* rhythm */
+  --u:    8px;           /* the tile unit */
+  --edge: 4px;           /* pixel border width */
+  --maxw: 1180px;
+
+  /* type */
+  --f-hud:  "Press Start 2P", "Courier New", monospace;
+  --f-body: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+
+html { scroll-padding-top: calc(72px + env(safe-area-inset-top, 0px)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+body {
+  margin: 0;
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--cloud);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+img { max-width: 100%; display: block; }
+
+a { color: var(--ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+a:hover { color: var(--brick-lo); }
+
+:focus-visible {
+  outline: var(--edge) solid var(--ink);
+  outline-offset: 3px;
+}
+
+code, kbd, pre, samp { font-family: var(--f-mono); font-size: 0.86em; }
+
+p code, li code, dd code, h3 code {
+  background: var(--cloud-2);
+  box-shadow: 0 0 0 2px var(--cloud-2);
+  padding: 0 1px;
+  overflow-wrap: anywhere;
+}
+
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--coin); color: var(--ink);
+  font-family: var(--f-hud); font-size: 10px;
+  padding: 12px 16px; box-shadow: 0 0 0 var(--edge) var(--ink);
+}
+.skip:focus { left: 8px; top: 8px; }
+
+/* --- pixel primitives ------------------------------------------------------ */
+
+/* Panels — the only place with any glass at all is .glass below. */
+.panel {
+  background: var(--cloud);
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 #ffffff,
+    inset 0 calc(var(--edge) * -1) 0 var(--cloud-2),
+    var(--u) var(--u) 0 rgba(16,21,52,.14);
+}
+
+.glass {
+  background: rgba(251,251,242,.72);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+}
+
+/* Scanline film. Applied to scene surfaces only, never to reading surfaces. */
+.scan::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(16,21,52,.10) 0 1px,
+    transparent 1px 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* --- type scale ------------------------------------------------------------ */
+
+h1, h2, h3 { margin: 0; line-height: 1.15; letter-spacing: -0.01em; }
+
+h1 {
+  font-family: var(--f-hud);
+  font-size: clamp(22px, 5.2vw, 44px);
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-shadow: var(--edge) var(--edge) 0 var(--ink-2);
+  color: var(--cloud);
+}
+
+h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+}
+
+h3 { font-size: 20px; font-weight: 700; }
+
+.hud-label {
+  font-family: var(--f-hud);
+  font-size: 10px;
+  line-height: 1.6;
+  letter-spacing: .04em;
+}
+
+.lede {
+  font-size: clamp(17px, 2vw, 19px);
+  max-width: 62ch;
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 40px);
+}
+
+/* --- HUD bar --------------------------------------------------------------- */
+
+.hud {
+  position: sticky; top: 0; z-index: 50;
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: var(--edge) solid var(--ink);
+}
+
+.hud-in {
+  display: flex; align-items: center; gap: var(--u);
+  min-height: 68px;
+  padding-block: 10px;
+}
+
+.hud-mark {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; flex: 0 0 auto;
+}
+
+.hud-chip {
+  width: 28px; height: 28px; flex: 0 0 28px;
+  background:
+    linear-gradient(var(--coin), var(--coin)) padding-box;
+  box-shadow:
+    0 0 0 3px var(--ink),
+    inset 0 3px 0 #ffe27a,
+    inset 0 -3px 0 var(--coin-lo);
+  position: relative;
+}
+.hud-chip::before {
+  content: "1";
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-family: var(--f-hud); font-size: 11px; color: var(--brown-2);
+}
+
+.hud-name { font-family: var(--f-hud); font-size: 11px; color: var(--ink); }
+
+.hud-nav {
+  flex: 1 1 auto;
+  display: flex; align-items: center; gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  margin-inline: 4px;
+}
+.hud-nav::-webkit-scrollbar { display: none; }
+
+.hud-nav a {
+  font-family: var(--f-hud); font-size: 9px;
+  text-decoration: none; color: var(--ink);
+  padding: 10px 11px;
+  white-space: nowrap;
+  border-bottom: var(--edge) solid transparent;
+  transition: background .12s steps(2), border-color .12s steps(2);
+}
+.hud-nav a:hover { background: var(--coin); }
+.hud-nav a.on { border-bottom-color: var(--brick); background: rgba(252,188,0,.35); }
+
+/* --- PLAYER 1 badge -------------------------------------------------------- */
+
+.player {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px 6px 6px;
+  background: var(--ink);
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 3px 0 var(--ink-2),
+    inset 0 -3px 0 #060a20;
+}
+
+.player-frame {
+  position: relative;
+  width: 44px; height: 44px; flex: 0 0 44px;
+  background: var(--sky);
+  /* NES-style double frame, built from shadows so it stays pixel-crisp */
+  box-shadow:
+    0 0 0 2px var(--coin),
+    0 0 0 5px var(--ink),
+    inset 0 0 0 2px rgba(255,255,255,.35);
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+
+.player-frame img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  filter: saturate(1.08) contrast(1.06);
+}
+
+/* Highlight sweep across the top-left corner of the badge — a collectible tell. */
+.player-frame::after {
+  content: "";
+  position: absolute; left: 0; top: 0; width: 100%; height: 40%;
+  background: linear-gradient(160deg, rgba(255,255,255,.42), rgba(255,255,255,0) 70%);
+  pointer-events: none;
+}
+
+/* CSS fallback avatar: an original 8-bit face, drawn with hard-stop gradients.
+   Swapped in by the img onerror handler, so a dead avatar never shows a
+   broken-image glyph. */
+.player-frame.fallback {
+  background:
+    /* visor */
+    linear-gradient(var(--ink), var(--ink)) 25% 45% / 50% 18% no-repeat,
+    /* eyes */
+    linear-gradient(var(--coin), var(--coin)) 34% 45% / 9% 18% no-repeat,
+    linear-gradient(var(--coin), var(--coin)) 60% 45% / 9% 18% no-repeat,
+    /* head */
+    linear-gradient(var(--brick-hi), var(--brick-hi)) 20% 28% / 60% 52% no-repeat,
+    /* cap */
+    linear-gradient(var(--brick), var(--brick)) 16% 18% / 68% 18% no-repeat,
+    var(--sky);
+}
+.player-frame.fallback img { display: none; }
+
+.player-meta { display: grid; gap: 3px; }
+.player-meta .k { font-family: var(--f-hud); font-size: 7px; color: var(--coin); letter-spacing: .06em; }
+.player-meta .v { font-family: var(--f-hud); font-size: 9px; color: var(--cloud); }
+
+.player-status {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--f-hud); font-size: 7px; color: var(--gray);
+}
+.player-status i {
+  width: 6px; height: 6px; background: var(--leaf);
+  box-shadow: 0 0 0 2px var(--leaf-2);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .player-status i { animation: blip 2.4s steps(1, end) infinite; }
+}
+@keyframes blip { 0%, 70% { opacity: 1; } 71%, 100% { opacity: .25; } }
+
+/* --- buttons --------------------------------------------------------------- */
+
+.btn {
+  display: inline-block;
+  font-family: var(--f-hud); font-size: 10px; line-height: 1.5;
+  text-decoration: none; color: var(--ink);
+  background: var(--cloud);
+  padding: 13px 16px;
+  cursor: pointer;
+  border: 0;
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 #ffffff,
+    inset 0 calc(var(--edge) * -1) 0 var(--cloud-2),
+    0 var(--edge) 0 var(--ink);
+  transform: translateY(0);
+  transition: transform .06s steps(1), box-shadow .06s steps(1);
+}
+.btn:hover { background: #fff; }
+.btn:active {
+  transform: translateY(var(--edge));
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 var(--cloud-2),
+    inset 0 calc(var(--edge) * -1) 0 #ffffff;
+}
+
+.btn-go {
+  background: var(--coin); color: var(--ink);
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 #ffe27a,
+    inset 0 calc(var(--edge) * -1) 0 var(--coin-lo),
+    0 var(--edge) 0 var(--ink);
+}
+.btn-go:hover { background: #ffd033; }
+.btn-go:active {
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 var(--coin-lo),
+    inset 0 calc(var(--edge) * -1) 0 #ffe27a;
+}
+
+.btn-src { background: var(--brick); color: var(--cloud); }
+.btn-src:hover { background: var(--brick-hi); color: var(--ink); }
+
+/* --- hero ------------------------------------------------------------------ */
+
+.hero {
+  position: relative;
+  background:
+    linear-gradient(var(--sky-hi) 0%, var(--sky) 42%, var(--sky-lo) 100%);
+  padding-top: clamp(40px, 7vw, 76px);
+  overflow: hidden;
+}
+
+.hero-in {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 52px);
+  align-items: center;
+  padding-bottom: clamp(36px, 5vw, 60px);
+  position: relative; z-index: 2;
+}
+
+.hero-copy > * + * { margin-top: var(--u); }
+
+.hero-kicker {
+  display: inline-block;
+  font-family: var(--f-hud); font-size: 9px;
+  background: var(--ink); color: var(--coin);
+  padding: 9px 11px;
+  box-shadow: 0 0 0 3px var(--ink), 3px 3px 0 rgba(16,21,52,.3);
+}
+
+.verbs {
+  display: flex; flex-wrap: wrap; gap: 10px 26px;
+  list-style: none; padding: 0;
+  margin-top: 18px !important;
+}
+.verbs li {
+  position: relative;
+  font-family: var(--f-hud); font-size: 11px;
+  background: var(--coin); color: var(--brown-2);
+  padding: 11px 12px;
+  box-shadow:
+    0 0 0 3px var(--ink),
+    inset 0 3px 0 #ffe27a,
+    inset 0 -3px 0 var(--coin-lo);
+}
+.verbs li:nth-child(2) { background: var(--brick); color: var(--cloud); box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 var(--brick-hi), inset 0 -3px 0 var(--brick-lo); }
+.verbs li:nth-child(3) { background: var(--ink-2); color: var(--coin); box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #3b4681, inset 0 -3px 0 var(--ink); }
+.verbs li:nth-child(4) { background: var(--leaf); color: var(--cloud); box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #63d283, inset 0 -3px 0 var(--leaf-2); }
+/* the arrows live in the gap after each chip; decorative, so they are not content */
+.verbs li:not(:last-child)::after {
+  content: "→";
+  content: "→" / "";
+  position: absolute; left: 100%; top: 50%;
+  width: 26px; margin-top: -8px;
+  text-align: center; line-height: 16px;
+  font-size: 11px; color: var(--ink);
+}
+
+.hero-p1 {
+  display: inline-block;
+  font-family: var(--f-hud); font-size: 9px; line-height: 1.6;
+  background: var(--cloud); color: var(--ink);
+  padding: 9px 11px;
+  margin-top: 18px !important;
+  box-shadow: 0 0 0 3px var(--ink), 3px 3px 0 rgba(16,21,52,.3);
+}
+
+.hero .lede {
+  color: var(--ink);
+  background: rgba(251,251,242,.88);
+  box-shadow: 0 0 0 3px var(--ink), 4px 4px 0 rgba(16,21,52,.18);
+  padding: 14px 16px;
+  margin-top: 20px !important;
+}
+.hero .lede code { background: rgba(16,21,52,.1); box-shadow: 0 0 0 2px rgba(16,21,52,.1); }
+
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px !important; }
+
+.hero-loop {
+  margin-top: 20px !important;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.hero-loop code {
+  display: inline-block;
+  font-size: 13px; font-weight: 600;
+  background: var(--ink); color: var(--coin);
+  padding: 9px 11px;
+  white-space: nowrap;
+  box-shadow: 0 0 0 3px var(--ink), 3px 3px 0 rgba(16,21,52,.3);
+}
+
+/* --- hero scene ------------------------------------------------------------ */
+
+.scene {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  min-height: 320px;
+  background: linear-gradient(rgba(255,255,255,.18), rgba(16,21,52,.06));
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 0 0 2px rgba(255,255,255,.35),
+    var(--u) var(--u) 0 rgba(16,21,52,.22);
+  overflow: hidden;
+  contain: paint;
+}
+
+/* far scenery */
+.hill {
+  position: absolute; bottom: 64px; left: -4%;
+  width: 46%; height: 30%;
+  background: var(--sky-lo);
+  clip-path: polygon(0 100%, 26% 22%, 42% 44%, 58% 8%, 78% 46%, 100% 100%);
+  opacity: .45;
+}
+
+.cloud {
+  position: absolute;
+  background: var(--cloud);
+  filter: drop-shadow(2px 2px 0 rgba(16,21,52,.22));
+  clip-path: polygon(0 100%, 0 55%, 16% 55%, 16% 28%, 40% 28%, 40% 6%, 66% 6%, 66% 30%, 86% 30%, 86% 56%, 100% 56%, 100% 100%);
+}
+.cloud.a { width: 96px; height: 40px; top: 9%;  left: 10%; }
+.cloud.b { width: 64px; height: 28px; top: 20%; right: 14%; opacity: .9; }
+.cloud.c { width: 76px; height: 32px; top: 36%; left: 54%; opacity: .7; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .cloud.a { animation: drift 22s ease-in-out infinite; }
+  .cloud.b { animation: drift 30s ease-in-out infinite reverse; }
+  .cloud.c { animation: drift 26s ease-in-out infinite; }
+}
+@keyframes drift {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(14px); }
+}
+
+/* question blocks — these carry the pipeline labels */
+.blocks-row {
+  position: absolute; top: 22%; left: 6%; right: 6%;
+  display: flex; justify-content: space-between; gap: 4%;
+  list-style: none; margin: 0; padding: 0;
+}
+
+.qblock {
+  position: relative;
+  flex: 1 1 0;
+  aspect-ratio: 1;
+  max-width: 76px;
+  background: var(--coin);
+  color: var(--brown-2);
+  display: grid; place-items: center;
+  cursor: default;
+  box-shadow:
+    0 0 0 var(--edge) var(--ink),
+    inset 0 var(--edge) 0 #ffe27a,
+    inset 0 calc(var(--edge) * -1) 0 var(--coin-lo),
+    inset var(--edge) 0 0 #ffd75c,
+    inset calc(var(--edge) * -1) 0 0 var(--coin-lo);
+  transform: translateY(0);
+  transition: transform .1s steps(2), background .1s steps(2);
+}
+/* a short pixel tick ties the tag visually to the block above it, so the
+   label reads as attached rather than a caption floating nearby */
+.qblock::after {
+  content: "";
+  position: absolute; top: 100%; left: 50%;
+  width: 2px; height: 8px;
+  background: var(--ink);
+  transform: translateX(-1px);
+}
+.qblock b {
+  font-family: var(--f-hud); font-size: 15px;
+}
+.qblock .tip {
+  position: absolute; top: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  font-family: var(--f-hud); font-size: 7px;
+  background: var(--ink); color: var(--coin);
+  padding: 6px 7px; white-space: nowrap;
+  opacity: .92; pointer-events: none;
+  transform: translateX(-50%) translateY(0);
+  box-shadow: 0 0 0 2px var(--ink);
+  transition: color .12s steps(2), transform .12s steps(2);
+}
+.qblock:hover, .qblock:focus-visible {
+  transform: translateY(-6px);
+  background: #ffd033;
+}
+.qblock:hover .tip, .qblock:focus-visible .tip { opacity: 1; color: #fff; }
+.qblock:active { transform: translateY(2px); }
+
+/* coin — same hard pixel-bevel language as blocks and buttons, not a
+   clip-path blob (clip-path softens edges at this size and reads as a drop) */
+.coin {
+  position: absolute; top: 46%; left: 24%;
+  width: 14px; height: 20px;
+  background: var(--coin);
+  box-shadow:
+    0 0 0 3px var(--ink),
+    inset 0 3px 0 #ffe27a,
+    inset 0 -3px 0 var(--coin-lo);
+}
+.coin::after {
+  content: "";
+  position: absolute; left: 44%; top: 18%;
+  width: 12%; height: 64%;
+  background: rgba(255,255,255,.8);
+}
+.coin.two { left: 63%; top: 54%; width: 12px; height: 18px; }
+@media (prefers-reduced-motion: no-preference) {
+  .coin      { animation: shimmer 2.6s steps(6, end) infinite; }
+  .coin.two  { animation-delay: .9s; }
+}
+@keyframes shimmer {
+  0%, 62%  { transform: scaleX(1);    filter: brightness(1); }
+  70%      { transform: scaleX(.45);  filter: brightness(1.25); }
+  78%      { transform: scaleX(.08);  filter: brightness(1.4); }
+  86%      { transform: scaleX(.45);  filter: brightness(1.25); }
+  94%,100% { transform: scaleX(1);    filter: brightness(1); }
+}
+
+/* pipe */
+.pipe-obj {
+  position: absolute; bottom: 64px; right: 12%;
+  width: 62px; height: 92px;
+  background: var(--leaf);
+  box-shadow: 0 0 0 var(--edge) var(--ink), inset -10px 0 0 var(--leaf-2), inset 10px 0 0 rgba(255,255,255,.28);
+}
+.pipe-obj::before {
+  content: "";
+  position: absolute; top: -18px; left: -9px; right: -9px; height: 22px;
+  background: var(--leaf);
+  box-shadow: 0 0 0 var(--edge) var(--ink), inset -10px 0 0 var(--leaf-2), inset 10px 0 0 rgba(255,255,255,.28);
+}
+
+/* the player sprite — an original blocky silhouette, no borrowed character */
+.sprite {
+  position: absolute; bottom: 64px; left: 13%;
+  width: 38px; height: 52px;
+  z-index: 3;
+}
+.sprite {
+  /* clip-path clips box-shadow, so the silhouette outline is drawn with
+     stacked drop-shadows instead — they trace the composited shape. */
+  filter:
+    drop-shadow(2px 0 0 var(--ink)) drop-shadow(-2px 0 0 var(--ink))
+    drop-shadow(0 2px 0 var(--ink)) drop-shadow(0 -2px 0 var(--ink));
+}
+.sprite .body {
+  position: absolute; inset: 0;
+  background: var(--brick);
+  box-shadow: inset 0 6px 0 var(--brick-hi), inset 0 -8px 0 var(--brick-lo);
+  clip-path: polygon(0 18%, 24% 18%, 24% 0, 76% 0, 76% 18%, 100% 18%, 100% 72%, 76% 72%, 76% 100%, 58% 100%, 58% 80%, 42% 80%, 42% 100%, 24% 100%, 24% 72%, 0 72%);
+}
+.sprite .visor {
+  position: absolute; left: 26%; top: 24%; width: 48%; height: 14%;
+  background: var(--ink);
+  box-shadow: inset 6px 0 0 var(--coin), inset -6px 0 0 var(--coin);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sprite.hop { animation: hop .62s steps(8, end) 1; }
+}
+@keyframes hop {
+  0%   { transform: translateY(0); }
+  40%  { transform: translateY(-52px); }
+  55%  { transform: translateY(-52px); }
+  100% { transform: translateY(0); }
+}
+
+/* the obstacle the detector is looking for */
+.obstacle {
+  position: absolute; bottom: 64px; right: 34%;
+  width: 26px; height: 30px;
+  background: var(--leaf);
+  box-shadow: inset 0 5px 0 #63d283;
+  filter:
+    drop-shadow(2px 0 0 var(--ink)) drop-shadow(-2px 0 0 var(--ink))
+    drop-shadow(0 2px 0 var(--ink)) drop-shadow(0 -2px 0 var(--ink));
+  clip-path: polygon(0 100%, 12% 34%, 34% 46%, 50% 0, 66% 46%, 88% 34%, 100% 100%);
+  z-index: 2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .obstacle { animation: approach 3.2s linear infinite; }
+}
+@keyframes approach {
+  0%   { transform: translateX(0); opacity: 1; }
+  88%  { transform: translateX(-190px); opacity: 1; }
+  89%  { opacity: 0; }
+  100% { transform: translateX(0); opacity: 0; }
+}
+
+/* ROI / scan overlay — the one piece of glass inside the scene */
+.roi {
+  position: absolute; left: 8%; right: 8%; top: 33%; bottom: 64px;
+  background: rgba(251,251,242,.10);
+  -webkit-backdrop-filter: saturate(1.25);
+  backdrop-filter: saturate(1.25);
+  box-shadow: inset 0 0 0 2px rgba(251,251,242,.75);
+  z-index: 4;
+  pointer-events: none;
+}
+.roi::before {
+  content: "roi_top_fraction 0.333";
+  position: absolute; top: -2px; left: -2px;
+  font-family: var(--f-hud); font-size: 7px;
+  background: var(--cloud); color: var(--ink);
+  padding: 4px 5px;
+}
+.roi .beam {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: var(--coin);
+  box-shadow: 0 0 6px 1px rgba(252,188,0,.8);
+  top: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .roi .beam { animation: sweep 3.2s linear infinite; }
+}
+@keyframes sweep {
+  0%, 100% { top: 4%; }
+  50%      { top: 94%; }
+}
+
+/* live telemetry strip pinned inside the scene */
+.telemetry {
+  position: absolute; left: 0; right: 0; top: 0;
+  z-index: 5;
+  display: flex; gap: 2px;
+  margin: 0;
+  padding: 6px;
+  font-family: var(--f-hud); font-size: 7px;
+}
+.telemetry span { flex: 1 1 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.telemetry .t-tag { flex: 0 1 auto; text-align: left; }
+.telemetry span {
+  background: rgba(16,21,52,.88); color: var(--cloud);
+  padding: 6px 7px;
+  box-shadow: 0 0 0 2px rgba(16,21,52,.88);
+}
+.telemetry .t-tag {
+  background: var(--brick); color: var(--cloud);
+  box-shadow: 0 0 0 2px var(--brick);
+  letter-spacing: .04em;
+}
+.telemetry span em { font-style: normal; color: var(--coin); }
+
+/* The hero scene is illustration only: nothing in it is interactive. */
+.hero-scene { pointer-events: none; user-select: none; }
+.hero-scene .qblock { transition: none; }
+
+/* --- playable game canvas --------------------------------------------------
+   The real HTML5 canvas game lives in the Simulation section (#sim-game).
+   ------------------------------------------------------------------------- */
+
+.sim-game { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+/* The compound selector out-ranks the generic mobile `.scene` banner rules,
+   so the canvas keeps its 16:9 shape at every width instead of being squashed
+   to a fixed height. */
+.sim-game .game-scene { aspect-ratio: 16 / 9; min-height: 0; height: auto; background: var(--sky); }
+
+#game-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  touch-action: auto;      /* no canvas touch handlers: never trap page scroll */
+  background: var(--sky);
+}
+
+.game-hud {
+  position: absolute; left: 0; right: 0; top: 0;
+  z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 2px;
+  margin: 0; padding: 6px;
+  font-family: var(--f-hud); font-size: 8px;
+  pointer-events: none;
+}
+.game-hud span {
+  background: rgba(16,21,52,.88); color: var(--cloud);
+  padding: 6px 7px;
+  box-shadow: 0 0 0 2px rgba(16,21,52,.88);
+  white-space: nowrap;
+}
+.game-hud em { font-style: normal; color: var(--coin); }
+
+.game-scene .telemetry { top: auto; bottom: 0; z-index: 5; }
+
+.game-overlay {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: rgba(16,21,52,.78);
+  text-align: center; padding: 20px;
+}
+.game-overlay[hidden] { display: none; }
+.go-title {
+  font-family: var(--f-hud); color: var(--coin); font-size: clamp(16px, 3.4vw, 24px);
+  text-shadow: 3px 3px 0 var(--ink);
+  margin: 0;
+}
+.go-sub { font-family: var(--f-mono); color: var(--cloud); font-size: 13px; margin: 0; }
+
+.game-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-top: clamp(16px, 2.4vw, 22px);
+  padding: 12px 14px;
+}
+.mode-toggle { display: inline-flex; box-shadow: 0 0 0 var(--edge) var(--ink); }
+.mode-btn { box-shadow: none; }
+.mode-btn[aria-pressed="true"] { background: var(--coin); }
+.mode-btn:not(:last-child) { border-right: var(--edge) solid var(--ink); }
+
+.touch-controls { display: none; gap: 8px; margin-left: auto; }
+.tbtn { font-size: 16px; padding: 14px 18px; }
+
+.sr-status {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-family: var(--f-mono); font-size: 13px; color: var(--gray-2);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch-controls { display: flex; }
+}
+.mode-bot-active .touch-controls { visibility: hidden; }
+
+@media (max-width: 700px) {
+  .game-hud { font-size: 7px; }
+}
+/* small phones: the strip drops its label so the five readouts have room */
+@media (max-width: 480px) {
+  .sim-game .telemetry .t-tag { display: none; }
+  .sim-game .telemetry { gap: 1px; padding: 4px; }
+  .sim-game .telemetry span { padding: 5px 3px; }
+}
+
+/* --- simulation section layout ---------------------------------------------- */
+
+.sim-lead { max-width: none; margin-bottom: clamp(14px, 2vw, 20px); }
+.sim-lead > p { max-width: 68ch; }
+.sim-lead-engine { margin-bottom: clamp(18px, 2.6vw, 28px); }
+#sim-play { scroll-margin-top: 14px; }
+.sim-lead h3 { font-size: clamp(20px, 2.6vw, 26px); }
+.sim-lead > p { font-size: 15.5px; }
+
+/* down-arrow that ties "what the agent does" to "how it decides" */
+.sim-arrow { display: flex; justify-content: center; margin: clamp(28px, 4vw, 44px) 0 clamp(20px, 3vw, 30px); }
+.sim-arrow i {
+  display: block; position: relative;
+  width: 4px; height: 40px;
+  background: repeating-linear-gradient(to bottom, var(--ink) 0 8px, transparent 8px 12px);
+}
+.sim-arrow i::after {
+  content: ""; position: absolute; left: -10px; bottom: -14px;
+  width: 24px; height: 14px; background: var(--ink);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.sim-arrow { padding-bottom: 14px; }
+
+/* ground tiles close the scene and the hero */
+.ground {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 64px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--brown) 0 30px, var(--brown-2) 30px 32px),
+    repeating-linear-gradient(0deg,
+      var(--brown) 0 30px, var(--brown-2) 30px 32px);
+  background-color: var(--brown);
+  border-top: var(--edge) solid var(--ink);
+  box-shadow: inset 0 6px 0 rgba(255,255,255,.14);
+}
+.hero > .ground { height: 40px; z-index: 3; }
+
+/* --- section bands --------------------------------------------------------- */
+
+.band { padding-block: clamp(48px, 7vw, 88px); }
+.band.alt { background: #f2f1e7; border-block: var(--edge) solid var(--ink); }
+.band.ink {
+  background: var(--ink); color: var(--cloud);
+  border-block: var(--edge) solid var(--ink);
+}
+.band.ink h2, .band.ink h3 { color: var(--cloud); }
+.band.ink a { color: var(--coin); }
+.band.ink p code { background: rgba(255,255,255,.12); box-shadow: 0 0 0 2px rgba(255,255,255,.12); color: var(--cloud); }
+
+.head { max-width: 68ch; margin-bottom: clamp(24px, 4vw, 40px); }
+.head > p { margin: 12px 0 0; color: var(--gray-2); }
+.band.ink .head > p { color: #b9c0d6; }
+
+.head .hud-label {
+  display: inline-block;
+  color: var(--brick-lo);
+  margin-bottom: 10px;
+}
+.band.ink .head .hud-label { color: var(--coin); }
+
+/* --- flow strip (PLAYER 1 -> capture -> ... -> action) --------------------- */
+
+.flow {
+  list-style: none; margin: 0 0 clamp(28px, 4vw, 44px); padding: 0;
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px;
+}
+.flow li {
+  flex: 1 1 128px;
+  position: relative;
+  background: var(--cloud); color: var(--ink);
+  padding: 12px 12px 12px 14px;
+  box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #fff, inset 0 -3px 0 var(--cloud-2);
+}
+.flow li .n { display: block; font-family: var(--f-hud); font-size: 9px; color: var(--brick-lo); }
+.flow li .d { display: block; font-size: 13px; color: var(--gray-2); margin-top: 6px; line-height: 1.45; }
+.flow li:first-child { background: var(--ink); color: var(--cloud); box-shadow: 0 0 0 3px var(--ink); }
+.flow li:first-child .n { color: var(--coin); }
+.flow li:first-child .d { color: #b9c0d6; }
+.flow li:last-child { background: var(--coin); box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #ffe27a, inset 0 -3px 0 var(--coin-lo); }
+.flow li:last-child .n, .flow li:last-child .d { color: var(--brown-2); }
+
+.band.ink .flow li { background: var(--ink-2); color: var(--cloud); box-shadow: 0 0 0 3px #3b4681, inset 0 3px 0 rgba(255,255,255,.12); }
+.band.ink .flow li .n { color: var(--coin); }
+.band.ink .flow li .d { color: #c6cce0; }
+.band.ink .flow li:first-child { background: var(--ink-2); box-shadow: 0 0 0 3px #3b4681; }
+.band.ink .flow li:last-child { background: var(--coin); box-shadow: 0 0 0 3px var(--coin); }
+.band.ink .flow li:last-child .n, .band.ink .flow li:last-child .d { color: var(--brown-2); }
+.band.ink .flow li code { background: rgba(255,255,255,.14); box-shadow: 0 0 0 2px rgba(255,255,255,.14); }
+.band.ink .flow li:last-child code { background: rgba(16,21,52,.12); box-shadow: 0 0 0 2px rgba(16,21,52,.12); }
+
+/* --- pipeline cards -------------------------------------------------------- */
+
+.pipes { list-style: none; margin: 0; padding: 0; display: grid; gap: clamp(16px, 2.4vw, 24px); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.pipe { padding: clamp(20px, 2.6vw, 28px); position: relative; }
+.pipe .cap {
+  position: absolute; top: calc(var(--edge) * -1); left: -4px;
+  width: 56px; height: 14px;
+  background: var(--leaf);
+  box-shadow: 0 0 0 var(--edge) var(--ink), inset 0 4px 0 rgba(255,255,255,.3);
+}
+.pipe h3 { margin-top: 14px; }
+.pipe h3 a { display: block; margin-top: 6px; color: var(--brick-lo); text-decoration-color: rgba(162,58,5,.4); }
+.pipe h3 a:hover { text-decoration-color: currentColor; }
+.pipe h3 code { font-size: .72em; color: inherit; background: none; box-shadow: none; }
+.pipe p { margin: 12px 0 0; color: var(--gray-2); font-size: 16px; }
+.pipe .out {
+  margin: 16px 0 0; padding-top: 14px;
+  border-top: 2px dashed rgba(16,21,52,.25);
+  display: grid; gap: 8px;
+}
+.pipe .out dt {
+  font-family: var(--f-hud); font-size: 8px; color: var(--brick-lo);
+  letter-spacing: .04em; margin-bottom: 4px;
+}
+.pipe .out dd {
+  margin: 0; font-family: var(--f-mono); font-size: 12.5px; color: var(--ink);
+  line-height: 1.6; overflow-wrap: break-word;
+}
+
+.note {
+  margin: clamp(20px, 3vw, 28px) 0 0;
+  padding: clamp(18px, 2.4vw, 24px);
+  font-size: 16px;
+}
+.note b { display: block; margin-bottom: 8px; }
+
+/* --- capability blocks ----------------------------------------------------- */
+
+.blocks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+.blocks li {
+  display: flex; gap: 12px; align-items: flex-start; min-width: 0;
+  background: var(--cloud); font-size: 15.5px; line-height: 1.5;
+  padding: 14px;
+  box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #fff, inset 0 -3px 0 var(--cloud-2);
+  transition: box-shadow .12s steps(2), transform .12s steps(2);
+}
+.blocks li:hover { transform: translateY(-3px); box-shadow: 0 0 0 3px var(--ink), 0 0 0 6px rgba(252,188,0,.55), inset 0 3px 0 #fff; }
+.blocks li span { min-width: 0; }
+.blocks li i {
+  flex: 0 0 22px; width: 22px; height: 22px; margin-top: 2px;
+  background: var(--coin); font-style: normal;
+  display: grid; place-items: center;
+  font-family: var(--f-hud); font-size: 9px; color: var(--brown-2);
+  box-shadow: 0 0 0 3px var(--ink), inset 0 2px 0 #ffe27a, inset 0 -2px 0 var(--coin-lo);
+}
+
+.scope { margin-top: clamp(20px, 3vw, 28px); padding: clamp(20px, 3vw, 28px); }
+.scope p { margin: 12px 0 0; color: var(--gray-2); }
+.band.ink .scope { background: var(--ink-2); box-shadow: 0 0 0 3px #3b4681, inset 0 5px 0 var(--coin); }
+.band.ink .scope p { color: #c6cce0; }
+
+/* --- profiles -------------------------------------------------------------- */
+
+.profile-grid { display: grid; gap: clamp(16px, 2.6vw, 28px); grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); align-items: start; }
+
+.fields { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fields button {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; font-size: 15px;
+  background: var(--cloud); color: var(--ink);
+  padding: 12px 14px; border: 0;
+  box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #fff, inset 0 -3px 0 var(--cloud-2);
+  transition: background .1s steps(2);
+}
+.fields button b { font-family: var(--f-mono); font-size: 14px; color: var(--brick-lo); display: block; }
+.fields button span { display: block; min-width: 0; overflow-wrap: anywhere; color: var(--gray-2); font-size: 14.5px; line-height: 1.5; margin-top: 4px; }
+.fields button:hover { background: #fff; }
+.fields button[aria-current="true"] { background: var(--coin); }
+.fields button[aria-current="true"] span { color: var(--brown-2); }
+.fields button[aria-current="true"] b { color: var(--brown-2); }
+
+.code-card { position: sticky; top: 92px; }
+.code-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--ink); color: var(--cloud);
+  font-family: var(--f-hud); font-size: 8px;
+  padding: 10px 10px 10px 12px;
+}
+.code-card pre {
+  margin: 0; padding: 16px;
+  background: #f4f2e8; font-size: 13px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+}
+.code-card pre span[data-line] { display: block; transition: background .12s steps(2); }
+.code-card pre span.lit { background: var(--coin); box-shadow: 0 0 0 3px var(--coin); }
+
+.copy {
+  font-family: var(--f-hud); font-size: 8px; cursor: pointer;
+  background: var(--coin); color: var(--ink); border: 0;
+  padding: 7px 8px;
+  box-shadow: inset 0 2px 0 #ffe27a, inset 0 -2px 0 var(--coin-lo);
+}
+.copy:hover { background: #ffd033; }
+.copy:active { box-shadow: inset 0 2px 0 var(--coin-lo), inset 0 -2px 0 #ffe27a; }
+
+/* --- simulator ------------------------------------------------------------- */
+
+.sim-grid { display: grid; gap: 0; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.sim-grid > * { padding: clamp(16px, 2.2vw, 22px); }
+
+.stage-wrap { border-right: var(--edge) solid var(--ink); }
+.stage {
+  position: relative;
+  height: 200px;
+  background: linear-gradient(var(--sky-hi), var(--sky));
+  box-shadow: 0 0 0 3px var(--ink);
+  overflow: hidden;
+}
+.stage .ground { height: 34px; }
+.stage .sprite { bottom: 34px; left: 12%; width: 26px; height: 34px; }
+.stage .obstacle { bottom: 34px; right: 8%; animation: none; width: 20px; height: 24px; }
+.stage .cloud.a { width: 56px; height: 24px; top: 12%; left: 16%; }
+.stage .roi { left: 4%; right: 4%; top: 33%; bottom: 34px; }
+
+.readout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px; margin: 14px 0 0; }
+.readout > div { background: var(--ink); color: var(--cloud); padding: 9px 10px; min-width: 0; }
+.readout > div.wide { grid-column: 1 / -1; }
+.readout dd { overflow-wrap: anywhere; }
+.readout dt { font-family: var(--f-hud); font-size: 7px; color: var(--gray); }
+.readout dd { margin: 5px 0 0; font-family: var(--f-mono); font-size: 13px; font-weight: 600; }
+.readout dd[data-act="JUMP"] { color: var(--coin); }
+.readout dd[data-sent="blocked"] { color: var(--brick-hi); }
+.readout dd[data-sent="ok"] { color: #8ce0a4; }
+
+.console { display: flex; flex-direction: column; background: #f4f2e8; }
+.console-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-family: var(--f-hud); font-size: 8px;
+  background: var(--ink); color: var(--coin);
+  padding: 8px 10px; margin: calc(clamp(16px, 2.2vw, 22px) * -1) calc(clamp(16px, 2.2vw, 22px) * -1) 0;
+}
+.console-bar #console-clock { margin-left: auto; }
+.console-bar .t-tag {
+  background: var(--brick); color: var(--cloud); padding: 5px 6px;
+}
+.log {
+  list-style: none; margin: 12px 0 0; padding: 10px;
+  height: 208px; overflow-y: auto;
+  background: var(--ink); color: #cfe3ff;
+  font-family: var(--f-mono); font-size: 11.5px; line-height: 1.65;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.08);
+  overflow-wrap: anywhere;
+}
+.log li.act   { color: var(--coin); }
+.log li.block { color: var(--brick-hi); }
+.log li.gate  { color: var(--gray); }
+.console-note { margin: 12px 0 0; font-size: 13.5px; color: var(--gray-2); }
+
+.controls { border-top: var(--edge) solid var(--ink); grid-column: 1 / -1; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-items: start; }
+.ctl-row { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+.ctl label { display: block; font-family: var(--f-hud); font-size: 9px; margin-bottom: 8px; }
+.ctl select { font: inherit; font-size: 14px; padding: 8px; width: 100%; background: var(--cloud); border: 3px solid var(--ink); }
+.ctl input[type="range"] { width: 100%; accent-color: var(--brick); }
+.ctl p { margin: 8px 0 0; font-size: 13.5px; color: var(--gray-2); line-height: 1.5; }
+.ctl output { font-family: var(--f-mono); color: var(--brick-lo); }
+
+/* --- safety + run ---------------------------------------------------------- */
+
+.cards { display: grid; gap: clamp(12px, 2vw, 18px); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.card { padding: clamp(18px, 2.4vw, 24px); }
+.card h3 { font-size: 18px; }
+.card p { margin: 10px 0 0; font-size: 15.5px; color: var(--gray-2); }
+.band.ink .card { background: var(--ink-2); box-shadow: 0 0 0 3px #3b4681, inset 0 5px 0 var(--coin); }
+.band.ink .card p { color: #c6cce0; }
+
+.run-grid { display: grid; gap: clamp(16px, 2.6vw, 28px); grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+.steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.step { padding: clamp(16px, 2.2vw, 22px); }
+.step h3 { font-family: var(--f-hud); font-size: 10px; color: var(--brick-lo); }
+.step p { margin: 10px 0 0; font-size: 15px; color: var(--gray-2); }
+.cmd { position: relative; margin-top: 12px; }
+.cmd pre {
+  margin: 0; padding: 14px 76px 14px 14px;
+  background: var(--ink); color: #d7e6ff; font-size: 13px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+}
+.cmd .copy { position: absolute; top: 8px; right: 8px; }
+.native { padding: clamp(18px, 2.4vw, 26px); }
+.native .hud-label { display: block; margin-bottom: 8px; color: var(--brick-lo); }
+.native p { margin: 12px 0 0; font-size: 15.5px; color: var(--gray-2); }
+
+/* --- closing CTA ----------------------------------------------------------- */
+
+.cta-in {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(18px, 3vw, 32px); align-items: center;
+  padding: clamp(22px, 3.4vw, 36px);
+}
+.cta-in .player { background: transparent; box-shadow: none; padding: 0; flex-direction: column; text-align: center; gap: 12px; }
+.cta-in .player-frame { width: 96px; height: 96px; flex-basis: 96px; }
+.cta-in .player-meta .k { color: var(--brick-lo); }
+.cta-in .player-meta .v { color: var(--ink); }
+.cta-links { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 0; }
+.cta-in > div > p { margin: 12px 0 0; color: var(--gray-2); }
+
+/* --- footer ---------------------------------------------------------------- */
+
+.foot { background: var(--ink); color: #b9c0d6; padding-block: clamp(32px, 5vw, 52px); }
+.foot-loop { margin: 0; font-family: var(--f-mono); font-size: 13px; color: var(--coin); overflow-x: auto; white-space: nowrap; }
+.foot-loop code { background: rgba(255,255,255,.1); box-shadow: 0 0 0 2px rgba(255,255,255,.1); color: var(--coin); }
+.foot-nav { display: flex; flex-wrap: wrap; gap: 16px; margin: 18px 0 0; }
+.foot-nav a { color: var(--cloud); font-family: var(--f-hud); font-size: 9px; text-decoration: none; border-bottom: 2px solid transparent; padding-bottom: 3px; }
+.foot-nav a:hover { border-bottom-color: var(--coin); color: var(--coin); }
+.foot-fine { margin: 22px 0 0; font-size: 13.5px; max-width: 76ch; line-height: 1.6; }
+
+/* --- responsive ------------------------------------------------------------ */
+
+@media (max-width: 980px) {
+  .hero-in { grid-template-columns: minmax(0, 1fr); }
+  .profile-grid, .run-grid, .sim-grid { grid-template-columns: minmax(0, 1fr); }
+  .stage-wrap { border-right: 0; border-bottom: var(--edge) solid var(--ink); }
+  .code-card { position: static; }
+  .cta-in { grid-template-columns: 1fr; justify-items: start; }
+  .cta-in .player { flex-direction: row; text-align: left; }
+}
+
+@media (max-width: 700px) {
+  body { font-size: 16px; }
+  /* Mobile is composed, not shrunk: the scene becomes a short wide banner that
+     sits under the copy, and the question blocks leave the sky for a strip. */
+  .hero { padding-top: 28px; }
+  .hero-in { padding-bottom: 0; gap: 22px; }
+  .scene {
+    aspect-ratio: auto; height: 210px; min-height: 0;
+    margin-inline: calc(clamp(16px, 4vw, 40px) * -1);
+    box-shadow: 0 0 0 var(--edge) var(--ink);
+  }
+  .scene .blocks-row { display: none; }
+  .scene .cloud.c { display: none; }
+  .scene .hill { bottom: 44px; height: 38%; }
+  .scene .pipe-obj { bottom: 44px; height: 62px; width: 46px; right: 9%; }
+  .scene .sprite { bottom: 44px; }
+  .scene .obstacle { bottom: 44px; }
+  .scene .roi { bottom: 44px; top: 30%; }
+  .scene .telemetry { font-size: 6px; }
+  .scene .ground { height: 44px; }
+  /* the game scene keeps 16:9 (see .sim-game .game-scene) and spans the full width */
+  .sim-game .game-scene { aspect-ratio: 16 / 9; height: auto; min-height: 0; }
+  .hero > .ground { display: none; }
+  .hero-copy .mobile-blocks { display: flex; }
+  .hud-in { min-height: 60px; flex-wrap: wrap; }
+  .hud-nav {
+    order: 3; flex: 0 0 100%; min-width: 100%;
+    margin-inline: 0; padding-top: 2px;
+    border-top: 2px solid rgba(16,21,52,.15);
+  }
+  .player-meta .v { font-size: 8px; }
+  .player-frame { width: 36px; height: 36px; flex-basis: 36px; }
+  html { scroll-padding-top: 116px; }
+  .readout { grid-template-columns: 1fr; }
+  .flow li { flex-basis: 100%; }
+  .cmd pre { padding-right: 14px; padding-top: 44px; }
+  .cmd .copy { top: 8px; left: 8px; right: auto; }
+}
+
+@media (max-width: 400px) {
+  :root { --edge: 3px; }
+  h1 { text-shadow: 3px 3px 0 var(--ink-2); }
+  .hud-name { font-size: 9px; }
+  .verbs li { font-size: 9px; padding: 9px 10px; }
+  .btn { font-size: 9px; padding: 12px 12px; }
+  .scene { height: 180px; }
+  .sim-game .game-scene { height: auto; }
+  .panel, .card, .step, .note, .scope, .native, .pipe { box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #fff; }
+}
+
+/* --- mobile-only pipeline chips (replaces the sky blocks under 700px) ------ */
+
+.mobile-blocks {
+  display: none;
+  list-style: none; margin: 16px 0 0; padding: 0 0 4px;
+  gap: 6px; overflow-x: auto;
+}
+.mobile-blocks li {
+  flex: 0 0 auto;
+  font-family: var(--f-hud); font-size: 8px;
+  background: var(--coin); color: var(--brown-2);
+  padding: 10px;
+  box-shadow: 0 0 0 3px var(--ink), inset 0 3px 0 #ffe27a, inset 0 -3px 0 var(--coin-lo);
+}
+
+/* --- motion off ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .hud, .scene, .controls, .console { display: none; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- ===== HUD ============================================================= -->
+<header class="hud glass">
+  <div class="wrap hud-in">
+    <a class="hud-mark" href="#top">
+      <span class="hud-chip" aria-hidden="true"></span>
+      <span class="hud-name">system1-gamebot</span>
+    </a>
+
+    <nav class="hud-nav" aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#profiles">Profiles</a>
+      <a href="#sim-play" data-section="simulator">Simulation</a>
+      <a href="https://github.com/ojas-mohbansi/system1-gamebot">GitHub</a>
+    </nav>
+
+    <div class="player">
+      <span class="player-frame" id="avatar-frame">
+        <img src="https://github.com/ojas-mohbansi.png" width="44" height="44"
+             alt="GitHub avatar of Ojas Mohbansi, the developer of system1-gamebot"
+             loading="eager" decoding="async"
+             onerror="this.closest('.player-frame').classList.add('fallback');this.remove();">
+      </span>
+      <span class="player-meta">
+        <span class="k">Player 1</span>
+        <span class="v">ojas-mohbansi</span>
+        <span class="player-status"><i aria-hidden="true"></i>MIT · Python</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ===== HERO ============================================================ -->
+<section class="hero" id="top" aria-labelledby="h-hero">
+  <div class="wrap hero-in">
+
+    <div class="hero-copy">
+      <p class="hero-kicker">Python · simulator-first · MIT</p>
+      <h1 id="h-hero">system1-gamebot</h1>
+      <ul class="verbs" aria-label="The loop: see, think, safety, act">
+        <li>SEE</li>
+        <li>THINK</li>
+        <li>SAFETY</li>
+        <li>ACT</li>
+      </ul>
+
+      <p class="hero-p1">PLAYER 1: ojas-mohbansi</p>
+
+      <p class="lede">
+        A Python framework for screen-driven game automation. It captures a rectangle of
+        your screen, detects the obstacle in it, asks a TypeSafe System One model for
+        exactly one action, then decides whether that action is allowed to reach the
+        keyboard. The first run is a headless simulator — no display, no API key, no game.
+      </p>
+
+      <p class="hero-cta">
+        <a class="btn btn-go" href="#sim-play">See the loop run</a>
+        <a class="btn btn-src" href="https://github.com/ojas-mohbansi/system1-gamebot">Read the source</a>
+      </p>
+
+      <p class="hero-loop"><code>capture → detect → decide → gate → act</code></p>
+
+      <ul class="mobile-blocks" aria-hidden="true">
+        <li>CAPTURE</li><li>DETECT</li><li>DECISION</li><li>CONFIDENCE</li><li>ACTION</li><li>SAFETY</li>
+      </ul>
+    </div>
+
+    <!-- Decorative only. The real, playable game lives in the Simulation
+         section (#sim-game). Nothing here moves, reads input or reports state. -->
+    <div class="scene hero-scene scan" aria-hidden="true">
+      <span class="hill"></span>
+      <span class="cloud a"></span>
+      <span class="cloud b"></span>
+
+      <ol class="blocks-row">
+        <li class="qblock"><b>?</b><span class="tip">SEE</span></li>
+        <li class="qblock"><b>?</b><span class="tip">THINK</span></li>
+        <li class="qblock"><b>?</b><span class="tip">SAFETY</span></li>
+        <li class="qblock"><b>?</b><span class="tip">ACT</span></li>
+      </ol>
+
+      <span class="coin"></span>
+      <span class="coin two"></span>
+      <span class="pipe-obj"></span>
+      <span class="sprite"><span class="body"></span><span class="visor"></span></span>
+      <span class="ground"></span>
+    </div>
+  </div>
+
+  <div class="ground" aria-hidden="true"></div>
+</section>
+
+<!-- ===== OVERVIEW ======================================================== -->
+<section class="band" id="overview" aria-labelledby="h-overview">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-1 · Overview</span>
+      <h2 id="h-overview">A framework, not a cheat</h2>
+      <p>
+        Roughly 900 lines of Python across five modules, MIT licensed. Every stage has a
+        simulated implementation and a native one behind the same interface, which is why
+        the whole loop runs on a machine with no display, no API key and no game attached
+        to it.
+      </p>
+    </header>
+
+    <ul class="blocks">
+      <li><i aria-hidden="true">?</i><span>Headless simulator mode with a moving obstacle</span></li>
+      <li><i aria-hidden="true">?</i><span>TypeSafe System One <code>Choice</code> integration through <code>TypeSafeClient.system_one()</code></span></li>
+      <li><i aria-hidden="true">?</i><span>Native <code>mss</code> capture and OpenCV detector scaffolding</span></li>
+      <li><i aria-hidden="true">?</i><span>Simulator, observation-only and <code>pynput</code> input controllers</span></li>
+      <li><i aria-hidden="true">?</i><span>Profile-based monitor, detector, HSV, model, confidence and key settings</span></li>
+      <li><i aria-hidden="true">?</i><span>Bounded latest-state handoff between capture and decision loops</span></li>
+      <li><i aria-hidden="true">?</i><span>Confidence gating, action cooldowns, emergency stop and shutdown cleanup</span></li>
+      <li><i aria-hidden="true">?</i><span>Human-readable and JSON Lines telemetry</span></li>
+      <li><i aria-hidden="true">?</i><span>Dependency-free unit tests for the core behaviour</span></li>
+    </ul>
+
+    <div class="scope panel">
+      <h3>And what it isn't</h3>
+      <p>
+        This is a reusable framework, not a plug-and-play bot for every game. Supporting a
+        real game still takes a calibrated screen region, a detector that understands that
+        game's visuals, a profile mapping actions to controls, a confidence and timing
+        policy tested against real outcomes, and a machine whose display and input the
+        runtime is allowed to touch.
+      </p>
+      <p>
+        The simulator is fully usable in a Codespace. Native mode and live model calls need
+        the environment above, and the full capture-to-keypress path has to be measured on
+        target hardware rather than assumed.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PIPELINE ======================================================== -->
+<section class="band alt" id="pipeline" aria-labelledby="h-pipeline">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-2 · Pipeline</span>
+      <h2 id="h-pipeline">One tick, start to finish</h2>
+      <p>
+        Three modules do the work and <code>bot.py</code> holds them together. Each box
+        below is a real stage in the loop, in the order it happens.
+      </p>
+    </header>
+
+    <ol class="flow">
+      <li><span class="n">PLAYER 1</span><span class="d">You pick the screen region and the keys.</span></li>
+      <li><span class="n">CAPTURE</span><span class="d">The monitor rectangle is grabbed at 100 Hz.</span></li>
+      <li><span class="n">DETECT</span><span class="d">The frame becomes distance, lane and speed.</span></li>
+      <li><span class="n">DECISION</span><span class="d">The model answers with one of four actions.</span></li>
+      <li><span class="n">CONFIDENCE</span><span class="d">Anything under the floor becomes DO_NOTHING.</span></li>
+      <li><span class="n">SAFETY</span><span class="d">Cooldowns, timeouts and the stop file get a veto.</span></li>
+      <li><span class="n">ACTION</span><span class="d">One key event, or a logged refusal.</span></li>
+    </ol>
+
+    <ol class="pipes">
+      <li class="pipe panel">
+        <span class="cap" aria-hidden="true"></span>
+        <h3>See <a href="https://github.com/ojas-mohbansi/system1-gamebot/blob/main/vision.py"><code>vision.py</code></a></h3>
+        <p>
+          <code>GameVision</code> grabs a monitor rectangle with <code>mss</code> and hands
+          the frame to a detector. <code>GreenObstacleDetector</code> converts to HSV, masks
+          the configured colour range, zeroes everything above the ROI line, takes the
+          largest contour at or over <code>min_area</code>, and measures distance from the
+          right edge of the frame to the obstacle's centre.
+        </p>
+        <dl class="out">
+          <div><dt>native</dt><dd>threat_distance=… lane_position=… speed=… threat_visible=…</dd></div>
+          <div><dt>simulator</dt><dd>Obstacle in Center lane, distance: … px</dd></div>
+        </dl>
+      </li>
+
+      <li class="pipe panel">
+        <span class="cap" aria-hidden="true"></span>
+        <h3>Think <a href="https://github.com/ojas-mohbansi/system1-gamebot/blob/main/decision.py"><code>decision.py</code></a></h3>
+        <p>
+          <code>TypeSafeDecisionProvider</code> wraps the published SDK: it builds a
+          <code>Choice</code> over JUMP, DODGE_LEFT, DODGE_RIGHT and DO_NOTHING, calls
+          <code>TypeSafeClient.system_one()</code> with the state string, and rejects any
+          answer outside that set. <code>SimulatorDecisionProvider</code> answers the same
+          question locally with a distance rule, so simulator mode needs no network or key.
+        </p>
+        <dl class="out"><div><dt>returns</dt><dd>action · confidence · per-option probabilities</dd></div></dl>
+      </li>
+
+      <li class="pipe panel">
+        <span class="cap" aria-hidden="true"></span>
+        <h3>Act <a href="https://github.com/ojas-mohbansi/system1-gamebot/blob/main/input.py"><code>input.py</code></a></h3>
+        <p>
+          Three backends share one interface. <code>SimulatorController</code> prints the
+          key it would press. <code>NullController</code> suppresses everything, which is
+          what <code>--observe-only</code> selects. <code>PynputController</code> maps the
+          action to a real key through the profile and presses it, tracking held keys so
+          shutdown can release them.
+        </p>
+        <dl class="out"><div><dt>result</dt><dd>one key event, or a logged refusal</dd></div></dl>
+      </li>
+    </ol>
+
+    <p class="note panel">
+      <b><a href="https://github.com/ojas-mohbansi/system1-gamebot/blob/main/bot.py"><code>bot.py</code></a> underneath it all</b>
+      Capture and decisions run on separate threads at separate rates. A one-slot
+      <code>LatestStateQueue</code> sits between them: a new state overwrites the old one
+      instead of queueing, so a slow decision can never build a backlog of stale frames. A
+      dropped state is counted, not hidden.
+    </p>
+  </div>
+</section>
+
+<!-- ===== SAFETY ========================================================== -->
+<section class="band ink" id="safety" aria-labelledby="h-safety">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-3 · Safety</span>
+      <h2 id="h-safety">Refusing to act is a feature</h2>
+      <p>
+        A bot with a keyboard needs more ways to do nothing than to do something. Four
+        of these gates can withhold a key press; the last two are how you see it happen.
+      </p>
+    </header>
+
+    <ol class="flow gate-chain">
+      <li><span class="n">DECISION</span><span class="d">The provider returns an action, a confidence and probabilities.</span></li>
+      <li><span class="n">CONFIDENCE CHECK</span><span class="d">Below <code>--min-confidence</code> it is replaced with <code>DO_NOTHING</code> at confidence 0, tagged <code>low_confidence</code>.</span></li>
+      <li><span class="n">COOLDOWN / SAFETY</span><span class="d"><code>ActionLimiter.allows()</code> and the stop event can still withhold the key.</span></li>
+      <li><span class="n">ACTION</span><span class="d">The controller presses the mapped key, or the refusal is printed and counted.</span></li>
+    </ol>
+
+    <div class="cards">
+      <article class="card">
+        <h3>Confidence gating</h3>
+        <p>
+          Any decision under <code>--min-confidence</code> is replaced with
+          <code>DO_NOTHING</code> at confidence 0 and tagged <code>low_confidence</code>.
+          The profile sets the default; the flag overrides it.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Cooldowns</h3>
+        <p>
+          <code>ActionLimiter</code> enforces a minimum gap between any two key events
+          (<code>--min-action-interval</code>, default 0.05 s) and a longer gap before
+          repeating the same one (<code>--action-cooldown</code>, default 0.15 s).
+          <code>DO_NOTHING</code> is always allowed through.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Emergency stop</h3>
+        <p>
+          <code>Ctrl+C</code>, <code>SIGTERM</code>, or the appearance of the file named by
+          <code>--stop-file</code> sets the stop event. A capture failure or a native key
+          failure sets it too. On the way out, every held key is released.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Timeouts and fallbacks</h3>
+        <p>
+          A decision that overruns <code>--decision-timeout</code> doesn't block the loop —
+          the tick falls back to <code>DO_NOTHING</code> and records why:
+          <code>decision_timeout</code>, <code>decision_in_flight</code>, or the exception
+          class the provider raised.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Telemetry</h3>
+        <p>
+          Every tick prints action, confidence, probabilities,
+          <code>engine_latency_ms</code>, <code>state_age_ms</code>, whether the key went
+          out, and the fallback reason. <code>--jsonl</code> emits the same record as one
+          JSON object per line for scripts.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Shutdown counters</h3>
+        <p>
+          The run ends with a <code>[STATS]</code> line: captures, capture errors,
+          decisions, fallbacks, actions sent, actions blocked and states dropped. Blocked
+          and dropped are the two worth watching.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PROFILES ======================================================== -->
+<section class="band" id="profiles" aria-labelledby="h-profiles">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-4 · Profiles</span>
+      <h2 id="h-profiles">One JSON file per game</h2>
+      <p>
+        Profiles keep game-specific detail out of the loop. <code>profiles.py</code>
+        validates every field on load, so a bad monitor rectangle or an unmappable key
+        fails at startup instead of halfway through a run. Pick a field to see where it
+        lands.
+      </p>
+    </header>
+
+    <div class="profile-grid">
+      <ul class="fields" id="fields">
+        <li><button type="button" data-field="name"><b>name</b><span>A human label, defaulting to <code>custom</code>. The runtime loop never reads it.</span></button></li>
+        <li><button type="button" data-field="model"><b>model</b><span>Which TypeSafe model answers. Defaults to <code>jev-latest</code>; <code>--model</code> overrides it.</span></button></li>
+        <li><button type="button" data-field="min_confidence"><b>min_confidence</b><span>Floor for acting on a decision, validated into 0–1 at load. Defaults to 0.0; <code>--min-confidence</code> overrides it.</span></button></li>
+        <li><button type="button" data-field="monitor"><b>monitor</b><span>Optional capture rectangle. If present it must hold exactly left, top, width and height — no more, no fewer — and width and height must be positive.</span></button></li>
+        <li><button type="button" data-field="actions"><b>actions</b><span>The four logical actions mapped to keys. Named keys are space, left, right, up, down, enter, esc and none; anything else must be a single character.</span></button></li>
+        <li><button type="button" data-field="detector"><b>detector</b><span>Which detector reads the frame. <code>green_obstacle</code> is the one that ships.</span></button></li>
+        <li><button type="button" data-field="detector_config"><b>detector_config</b><span>HSV bounds, the minimum contour area, and how much of the top of the frame to ignore.</span></button></li>
+      </ul>
+
+      <div class="code-card panel">
+        <div class="code-bar">
+          <span>profiles/example_runner.json</span>
+          <button class="copy" type="button" data-copy="#profile-json">Copy</button>
+        </div>
+<pre id="profile-json"><code>{
+<span data-line="name">  "name": "example-runner",
+</span><span data-line="model">  "model": "jev-latest",
+</span><span data-line="min_confidence">  "min_confidence": 0.0,
+</span><span data-line="monitor">  "monitor": {"left": 0, "top": 0, "width": 1280, "height": 720},
+</span><span data-line="actions">  "actions": {
+    "JUMP": "space",
+    "DODGE_LEFT": "left",
+    "DODGE_RIGHT": "right",
+    "DO_NOTHING": "none"
+  },
+</span><span data-line="detector">  "detector": "green_obstacle",
+</span><span data-line="detector_config">  "detector_config": {
+    "hsv_lower": [35, 90, 140],
+    "hsv_upper": [90, 255, 255],
+    "min_area": 12,
+    "roi_top_fraction": 0.333
+  }</span>
+}
+</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SIMULATION ====================================================== -->
+<section class="band alt" id="simulator" aria-labelledby="h-simulator">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-5 · Simulation</span>
+      <h2 id="h-simulator">Run the browser simulation</h2>
+      <p>
+        A small platformer built for this page. Play it yourself, or switch to <b>Bot</b> and
+        watch a local decision loop see the level, think, pass its choice through a safety
+        gate and press the key. It is not the Python bot, and nothing here calls a network
+        or runs live TypeSafe / Jev inference.
+      </p>
+    </header>
+
+    <header class="head sim-lead" id="sim-play">
+      <span class="hud-label">Interactive browser simulation · Local JEV-style decision demo</span>
+      <h3 id="h-sim-play-title">Watch the agent react</h3>
+    </header>
+
+    <!-- The one real, playable game: a small canvas platformer with a local,
+         deterministic bot that actually drives the player. It is a simulation
+         of the project's architecture, not a live connection to the Python
+         bot or to TypeSafe. The decision engine that explains it follows. -->
+    <div class="sim-game" id="sim-game">
+      <div class="scene game-scene scan" id="game-scene">
+        <canvas id="game-canvas" width="480" height="270"
+          aria-label="A small playable pixel-art platformer. Switch to Bot mode below to watch a local decision engine see, think and act; switch to Manual to play it yourself with arrow keys or WASD, and space or up to jump."></canvas>
+
+        <p class="game-hud" aria-hidden="true">
+          <span>WORLD 1-1</span>
+          <span>PLAYER 1: ojas-mohbansi</span>
+          <span>COINS <em id="g-coins">00</em></span>
+          <span>SCORE <em id="g-score">0000</em></span>
+          <span>TIME <em id="g-time">000</em></span>
+        </p>
+
+        <p class="telemetry">
+          <span class="t-tag">Local decision engine</span>
+          <span>STATE <em id="t-state">—</em></span>
+          <span>PHASE <em id="t-phase">—</em></span>
+          <span>CONFIDENCE <em id="t-conf">—</em></span>
+          <span>ACTION <em id="t-act">—</em></span>
+          <span>SAFETY <em id="t-safe">—</em></span>
+        </p>
+
+        <div class="game-overlay" id="game-overlay" hidden>
+          <p class="go-title" id="go-title">GAME OVER</p>
+          <p class="go-sub" id="go-sub">The bot will retry automatically.</p>
+          <button class="btn btn-go" id="go-retry" type="button">Retry</button>
+        </div>
+
+        <noscript>
+          <p style="position:absolute;inset:0;margin:0;display:flex;align-items:center;justify-content:center;padding:16px;background:var(--sky);color:var(--ink);font-family:var(--f-body);text-align:center;">
+            The playable demo needs JavaScript. system1-gamebot is a Python framework that
+            captures a screen region, detects an obstacle, asks a model for one action, applies
+            safety rules, then presses a key — see the sections below for the full pipeline.
+          </p>
+        </noscript>
+      </div>
+
+      <div class="game-controls panel" role="group" aria-label="Game controls">
+        <div class="mode-toggle" role="group" aria-label="Control mode">
+          <button class="btn mode-btn" id="mode-manual" type="button" aria-pressed="true">Manual</button>
+          <button class="btn mode-btn" id="mode-bot" type="button" aria-pressed="false">Bot</button>
+        </div>
+        <button class="btn" id="game-mute" type="button" aria-pressed="false">Mute</button>
+        <button class="btn" id="game-reset-hero" type="button">Reset</button>
+        <div class="touch-controls" id="touch-controls">
+          <button class="btn tbtn" id="tc-left" type="button" aria-label="Move left">◀</button>
+          <button class="btn tbtn" id="tc-right" type="button" aria-label="Move right">▶</button>
+          <button class="btn tbtn" id="tc-jump" type="button" aria-label="Jump">⤴</button>
+        </div>
+        <p class="sr-status" id="game-status" role="status" aria-live="polite">
+          Manual mode. Use Arrow keys / A D to move, Space / W / Up to jump.
+        </p>
+      </div>
+    </div>
+
+    <div class="sim-arrow" aria-hidden="true"><i></i></div>
+
+    <header class="head sim-lead sim-lead-engine">
+      <span class="hud-label">Local decision engine</span>
+      <h3 id="h-sim-engine">Understand the decision process</h3>
+      <p>
+        Everything the agent does above is logged here as it happens: what it captured, what it
+        decided, and whether the safety gate let the action through. This panel is wired to that
+        game, not a separate illustration — an honest local stand-in built with the same shape
+        (capture → decide → gate → act) as <code>bot.py</code>, running entirely in this tab. No
+        network calls, no API keys, no live TypeSafe / Jev inference — see
+        <a href="#pipeline">the pipeline</a> for what the real Python does. Pause, single-step,
+        decision rate, min-confidence and the debug overlay are in the controls at the bottom of
+        the panel.
+      </p>
+    </header>
+
+    <div class="sim-grid panel">
+      <div class="stage-wrap">
+        <dl class="readout">
+          <div class="wide"><dt>latest capture · up to 100 Hz</dt><dd id="r-state">Bot mode is off — switch it on above to see live captures.</dd></div>
+          <div><dt>last decision</dt><dd id="r-action">—</dd></div>
+          <div><dt>confidence</dt><dd id="r-conf">—</dd></div>
+          <div><dt>action sent</dt><dd id="r-sent">—</dd></div>
+          <div><dt>safety gate</dt><dd id="r-gate">—</dd></div>
+        </dl>
+        <p class="console-note">
+          <b>reason</b> <span id="r-reason">—</span>
+        </p>
+      </div>
+
+      <div class="console">
+        <div class="console-bar">
+          <span class="t-tag">Local decision engine</span>
+          <span id="console-mode">manual — bot idle</span>
+          <span id="console-clock">t+0.00s</span>
+        </div>
+        <ol class="log" id="log" aria-live="off" aria-label="Local decision engine log">
+          <li>Waiting for Bot mode…</li>
+        </ol>
+        <p class="console-note">
+          Capture runs far more often than decisions, so the capture line moves while the
+          decision holds — that gap is roughly what <code>state_age_ms</code> measures in the
+          real Python runtime. This browser log is a JEV-style local demo of that shape, not
+          a replay of a recorded run.
+        </p>
+      </div>
+
+      <div class="controls">
+        <div class="ctl-row">
+          <button class="btn btn-go" id="b-play" type="button" aria-pressed="true">Pause engine</button>
+          <button class="btn" id="b-step" type="button">Step one frame</button>
+          <button class="btn" id="b-reset" type="button">Reset level</button>
+        </div>
+
+        <div class="ctl">
+          <label for="c-hz">decision rate</label>
+          <select id="c-hz">
+            <option value="10" selected>10 Hz (default)</option>
+            <option value="20">20 Hz</option>
+            <option value="50">50 Hz</option>
+            <option value="100">100 Hz</option>
+          </select>
+          <p>Capture always runs faster than this. Raising the decision rate samples the
+          same states more often, which is where the cooldown starts blocking repeat jumps.</p>
+        </div>
+
+        <div class="ctl">
+          <label for="c-conf">min-confidence <output id="c-conf-out">0.55</output></label>
+          <input id="c-conf" type="range" min="0" max="0.99" step="0.01" value="0.55">
+          <p>Any decision below this becomes a <code>LOW_CONFIDENCE</code> refusal — the bot
+          coasts instead of acting. Push it near 0.95 and the bot starts missing jumps.</p>
+        </div>
+        <div class="ctl">
+          <label for="c-debug"><input id="c-debug" type="checkbox"> debug overlay</label>
+          <p>Draws the player and obstacle hitboxes, the detection region, the velocity
+          vector and the raw decision timers directly on the canvas.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== RUN ============================================================= -->
+<section class="band" id="run" aria-labelledby="h-run">
+  <div class="wrap">
+    <header class="head">
+      <span class="hud-label">World 1-6 · First run</span>
+      <h2 id="h-run">Start in the simulator</h2>
+      <p>
+        Clone, run the simulator, then read the telemetry. The simulator is the right
+        first run, including in a Codespace terminal: it needs no display, keyboard
+        permission, API key, OpenCV, <code>mss</code> or <code>pynput</code>. The commands
+        below are shown for you to copy and run yourself — this page executes none of them.
+      </p>
+    </header>
+
+    <div class="run-grid">
+      <div class="steps">
+        <div class="step panel">
+          <h3>1 · Clone it and make an environment</h3>
+          <div class="cmd">
+            <pre id="cmd-1"><code>git clone https://github.com/ojas-mohbansi/system1-gamebot.git
+cd system1-gamebot
+python -m venv .venv
+source .venv/bin/activate</code></pre>
+            <button class="copy" type="button" data-copy="#cmd-1">Copy</button>
+          </div>
+          <p>Nothing is installed yet. Simulator mode needs no third-party packages at all.</p>
+        </div>
+
+        <div class="step panel">
+          <h3>2 · Run the simulator</h3>
+          <div class="cmd">
+            <pre id="cmd-2"><code>python bot.py --sim</code></pre>
+            <button class="copy" type="button" data-copy="#cmd-2">Copy</button>
+          </div>
+          <p>
+            This runs in your terminal, not in this page. You get simulated actions,
+            confidence values, latency, fallbacks, and a <code>[STATS]</code> summary when
+            you stop it with <code>Ctrl+C</code>.
+          </p>
+        </div>
+
+        <div class="step panel">
+          <h3>3 · Point it at a profile</h3>
+          <div class="cmd">
+            <pre id="cmd-3"><code>python bot.py --sim --profile profiles/example_runner.json</code></pre>
+            <button class="copy" type="button" data-copy="#cmd-3">Copy</button>
+          </div>
+          <p>
+            <code>profiles/example_runner.json</code> is checked in. Without
+            <code>--profile</code> the runtime uses the defaults in
+            <code>profiles.py</code>.
+          </p>
+        </div>
+
+        <div class="step panel">
+          <h3>4 · Inspect the output</h3>
+          <div class="cmd">
+            <pre id="cmd-7"><code>python bot.py --sim --observe-only
+python bot.py --sim --jsonl</code></pre>
+            <button class="copy" type="button" data-copy="#cmd-7">Copy</button>
+          </div>
+          <p>
+            <code>--observe-only</code> still decides and logs but swaps in
+            <code>NullController</code>, which prints <code>[OBSERVE ONLY] Suppressed …</code>
+            instead of pressing anything. <code>--jsonl</code> emits one JSON object per
+            decision for scripts.
+          </p>
+        </div>
+
+        <div class="step panel">
+          <h3>5 · Tune the loop</h3>
+          <div class="cmd">
+            <pre id="cmd-4"><code>python bot.py --sim \
+  --capture-hz 100 \
+  --decision-hz 10 \
+  --decision-timeout 0.2 \
+  --min-confidence 0.90</code></pre>
+            <button class="copy" type="button" data-copy="#cmd-4">Copy</button>
+          </div>
+          <p>These are the defaults, written out. Safety flags work the same way: <code>--action-cooldown</code>, <code>--min-action-interval</code>, <code>--stop-file</code>.</p>
+        </div>
+      </div>
+
+      <aside class="native panel">
+        <span class="hud-label">Beyond the simulator</span>
+        <h3>When you move to a real machine</h3>
+        <p>
+          Native mode needs a graphical session, input permission and the pinned packages:
+          <code>mss</code>, <code>opencv-python-headless</code>, <code>pynput</code> and
+          <code>typesafe-sdk</code>. Check the environment before you start the bot.
+        </p>
+        <div class="cmd">
+          <pre id="cmd-5"><code>python -m pip install -r requirements.txt
+export TYPESAFE_API_KEY="your-api-key"
+python bot.py --preflight \
+  --profile profiles/example_runner.json</code></pre>
+          <button class="copy" type="button" data-copy="#cmd-5">Copy</button>
+        </div>
+        <p>
+          Preflight reports display, monitor count, OpenCV version and keyboard access.
+          A headless container fails it — that's expected, and it's what <code>--sim</code>
+          is for. Once it passes, run with <code>--observe-only</code> before you let it
+          press anything.
+        </p>
+        <div class="cmd">
+          <pre id="cmd-6"><code>python -m unittest discover -s tests -v</code></pre>
+          <button class="copy" type="button" data-copy="#cmd-6">Copy</button>
+        </div>
+        <p>The tests need no third-party packages. CI runs the same ones on every push.</p>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ===== GITHUB ========================================================== -->
+<section class="band alt" id="github" aria-labelledby="h-github">
+  <div class="wrap">
+    <div class="cta-in panel">
+      <div class="player">
+        <span class="player-frame" id="avatar-frame-2">
+          <img src="https://github.com/ojas-mohbansi.png" width="96" height="96"
+               alt="GitHub avatar of Ojas Mohbansi"
+               loading="lazy" decoding="async"
+               onerror="this.closest('.player-frame').classList.add('fallback');this.remove();">
+        </span>
+        <span class="player-meta">
+          <span class="k">Player 1</span>
+          <span class="v">ojas-mohbansi</span>
+        </span>
+      </div>
+
+      <div>
+        <h2 id="h-github">Take a look at the code</h2>
+        <p>
+          MIT licensed, built and maintained by
+          <a href="https://github.com/ojas-mohbansi">Ojas Mohbansi</a>. Issues and pull
+          requests are open — a detector for a new game, or a profile you've calibrated,
+          are the most useful things to send.
+        </p>
+        <p class="cta-links">
+          <a class="btn btn-go" href="https://github.com/ojas-mohbansi/system1-gamebot">Open the repository</a>
+          <a class="btn" href="https://github.com/ojas-mohbansi/system1-gamebot#readme">Read the README</a>
+          <a class="btn" href="https://github.com/ojas-mohbansi/system1-gamebot/issues">Browse issues</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ===== FOOTER ========================================================== -->
+<footer class="foot">
+  <div class="wrap">
+    <p class="foot-loop"><code>capture → detect → decide → gate → act</code></p>
+    <nav class="foot-nav" aria-label="Repository">
+      <a href="https://github.com/ojas-mohbansi/system1-gamebot">Repository</a>
+      <a href="https://github.com/ojas-mohbansi/system1-gamebot#readme">README</a>
+      <a href="https://github.com/ojas-mohbansi/system1-gamebot/blob/main/LICENSE">MIT licence</a>
+      <a href="https://github.com/ojas-mohbansi/system1-gamebot/tree/main/profiles">Profiles</a>
+    </nav>
+    <p class="foot-fine">
+      The 8-bit styling on this page is an original homage to the platformers of that era.
+      Every graphic is drawn in CSS; no game assets are used, and the project is not
+      affiliated with, sponsored by or endorsed by any game publisher. Automating a game
+      you don't control may breach its terms of service — check before you point this at
+      anything.
+    </p>
+  </div>
+</footer>
+
+<script>
+/* ==========================================================================
+   system1-gamebot — landing page behaviour
+   No dependencies, no build step. The page reads and works with this file
+   removed; everything below is enhancement.
+     1. HUD section indicator
+     2. the playable game + local decision engine
+     3. a faithful replay of simulator mode
+     4. profile field highlighting
+     5. copy buttons
+   Every constant in the replay comes from the Python source; see SIM.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : { matches: false };
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  /* ------------------------------------------------------ HUD / nav state */
+
+  (function hud() {
+    var links = $$('.hud-nav a');
+    var ids = ['top', 'overview', 'pipeline', 'safety', 'profiles', 'simulator', 'run', 'github'];
+    var sections = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (!sections.length || !('IntersectionObserver' in window)) return;
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var href = '#' + entry.target.id;
+        links.forEach(function (a) {
+          a.classList.toggle('on', a.getAttribute('href') === href || a.getAttribute('data-section') === entry.target.id);
+        });
+      });
+    }, { rootMargin: '-45% 0px -45% 0px' });
+
+    sections.forEach(function (s) { observer.observe(s); });
+  })();
+
+  /* ------------------------------------------------------------- the game
+     A real, small, single-canvas NES-style platformer, plus a local
+     deterministic "JEV-style" decision engine that can actually play it.
+     Everything below is one causal chain:
+
+       INPUT -> PHYSICS -> COLLISION -> WORLD STATE -> CAPTURE -> DECISION
+       -> SAFETY -> ACTION -> INPUT
+
+     Manual keys and the bot's decisions both funnel into the same `input`
+     object and the same `tryJump()` call, so nothing here is cosmetic: if
+     telemetry says JUMP, the player physically jumped because of it.
+     ------------------------------------------------------------------- */
+
+  (function game() {
+    var canvas = $('#game-canvas');
+    if (!canvas || !canvas.getContext) return;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    var W = canvas.width, H = canvas.height;
+    var TILE = 15;
+    var COLS = 150;
+    var ROWS = Math.round(H / TILE); /* 18 */
+
+    var COLORS = {
+      skyHi: '#8cb4ff', skyLo: '#3f74d8',
+      ink: '#101534', cloud: '#fbfbf2',
+      brick: '#e45c10', brickHi: '#ff8544', brickLo: '#a23a05',
+      coin: '#fcbc00', coinHi: '#ffe27a', coinLo: '#b07d00',
+      brown: '#7a3b12', brownHi: '#9a531f', brownLo: '#4a2109',
+      leaf: '#2fa34a', leafHi: '#63d283', leafLo: '#1a6b2f',
+      gray: '#8e97ad',
+      skin: '#f2b389', hair: '#4a2109', suit: '#3f74d8', suitLo: '#28508f'
+    };
+
+    /* -------------------------------------------------------------- level */
+
+    var groundTop = new Array(COLS).fill(16); /* row index; null = pit */
+    /* single-tile pits: well within the jump's horizontal range, so a
+       correctly-timed jump always clears them */
+    [[46, 46], [97, 97]].forEach(function (g) {
+      for (var c = g[0]; c <= g[1]; c++) groundTop[c] = null;
+    });
+
+    var platforms = [
+      { c0: 60, c1: 63, row: 12 },
+      { c0: 118, c1: 121, row: 11 }
+    ];
+
+    var blocks = [
+      { c: 20, row: 10, type: 'q', used: false },
+      { c: 21, row: 10, type: 'b' },
+      { c: 22, row: 10, type: 'q', used: false },
+      { c: 23, row: 10, type: 'b' },
+      { c: 61, row: 9, type: 'q', used: false },
+      { c: 119, row: 8, type: 'q', used: false }
+    ];
+
+    var coins = [
+      { c: 12, row: 12 }, { c: 13, row: 12 },
+      { c: 34, row: 13 }, { c: 35, row: 13 },
+      { c: 61, row: 9 - 3 },
+      { c: 70, row: 14 }, { c: 71, row: 14 }, { c: 72, row: 14 },
+      { c: 119, row: 6 },
+      { c: 130, row: 13 }, { c: 131, row: 13 }, { c: 132, row: 13 }
+    ].map(function (c) { return { c: c.c, row: c.row, taken: false, t: Math.random() * 10 }; });
+
+    var pipe = { c0: 137, c1: 138, rowTop: 13 };
+    var goalCol = COLS - 5;
+
+    function tileSolid(c, r) {
+      if (r < 0 || r >= ROWS) return false;
+      if (groundTop[c] != null && r >= groundTop[c]) return true;
+      for (var i = 0; i < platforms.length; i++) {
+        var p = platforms[i];
+        if (c >= p.c0 && c <= p.c1 && r === p.row) return true;
+      }
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (b.c === c && b.row === r) return true;
+      }
+      if (c >= pipe.c0 && c <= pipe.c1 && r >= pipe.rowTop) return true;
+      return false;
+    }
+
+    function blockAt(c, r) {
+      for (var j = 0; j < blocks.length; j++) {
+        if (blocks[j].c === c && blocks[j].row === r) return blocks[j];
+      }
+      return null;
+    }
+
+    var LEVEL_PX = COLS * TILE;
+
+    /* ------------------------------------------------------------ enemies */
+
+    function makeEnemy(startCol, range, speed) {
+      return {
+        x: startCol * TILE, y: 16 * TILE - TILE, w: TILE - 1, h: TILE - 1,
+        baseX: startCol * TILE, range: range * TILE, dir: 1, speed: speed,
+        alive: true, deadT: 0, walkT: Math.random() * 10
+      };
+    }
+    var enemies = [makeEnemy(28, 3, 0.55), makeEnemy(75, 4, 0.7)];
+
+    /* ------------------------------------------------------------- player */
+
+    var PW = 13, PH = 26;
+    var player, camX;
+
+    function freshPlayer() {
+      return {
+        x: 2 * TILE, y: 16 * TILE - PH, w: PW, h: PH,
+        vx: 0, vy: 0, grounded: false, facing: 1,
+        state: 'idle', animT: 0,
+        coyote: 0, jumpBuf: 0, jumpHeld: false,
+        dead: false, deadT: 0
+      };
+    }
+
+    var GRAVITY = 0.62, MAX_FALL = 10.5;
+    var MOVE_ACCEL = 0.55, AIR_ACCEL = 0.4, FRICTION = 0.6, MAX_SPEED = 2.9;
+    var JUMP_V = -9.3, JUMP_CUT = 0.45;
+    var COYOTE_STEPS = 6, BUFFER_STEPS = 6;
+
+    /* --------------------------------------------------------------- input */
+
+    var input = { left: false, right: false, jumpHeld: false, jumpPressed: false };
+    var mode = 'manual'; /* 'manual' | 'bot' */
+    var paused = false;
+    var muted = false;
+    var debugMode = false;
+    /* CAPTURE ~100Hz -> OBSERVE -> THINK -> DECIDE -> SAFETY -> ACT.
+       The decision phase is not instant: once a decision tick fires, the
+       bot sits in THINKING for a short deterministic delay so the loop is
+       visible rather than a hidden if-statement. The fast reflex check in
+       capture() is a separate, lower-level safety net and is not part of
+       this deliberate cycle. */
+    var botPhase = 'idle'; /* 'idle' | 'thinking' */
+    var botPhaseT = 0;
+    var pendingObs = null;
+    var THINK_DELAY = 0.08; /* seconds — short enough to stay responsive */
+    var audioCtx = null;
+
+    /* ---------------------------------------------------------------- fx */
+
+    function ensureAudio() {
+      if (audioCtx || muted) return;
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) { /* no audio available; game still works */ }
+    }
+    function tone(freq, dur, type, vol, delay) {
+      if (!audioCtx || muted) return;
+      var t0 = audioCtx.currentTime + (delay || 0);
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || 'square';
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol || 0.14, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    }
+    var sfx = {
+      jump: function () { tone(520, 0.16, 'square', 0.13); tone(760, 0.1, 'square', 0.09, 0.05); },
+      coin: function () { tone(988, 0.08, 'square', 0.12); tone(1319, 0.14, 'square', 0.11, 0.06); },
+      bump: function () { tone(180, 0.09, 'square', 0.14); },
+      stomp: function () { tone(140, 0.12, 'square', 0.15); },
+      death: function () { tone(300, 0.5, 'sawtooth', 0.1); tone(180, 0.5, 'sawtooth', 0.08, 0.15); },
+      win: function () {
+        [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 0.18, 'square', 0.12, i * 0.11); });
+      }
+    };
+
+    /* -------------------------------------------------------------- state */
+
+    var score = 0, coinsCount = 0, timeSec = 0;
+    var dead = false, levelComplete = false;
+    var wasGrounded = false;
+
+    var captureAccum = 0, decisionAccum = 0;
+    var CAPTURE_DT = 1 / 100;
+    var decisionHz = 10, DECISION_DT = 1 / decisionHz;
+    var minConfidence = 0.55;
+    var lastObservation = null;
+    var lastDecision = null, lastSafety = null;
+    var lastActionValue = 'STOP', prevActionValue = 'STOP';
+    var lastJumpAt = -99, simTime = 0;
+    var JUMP_COOLDOWN = 0.38;
+
+    var DETECT_RANGE = 190;
+
+    var decisionLog = [];
+    var MAX_LOG = 48;
+
+    /* -------------------------------------------------------------- DOM */
+
+    var elCoins = $('#g-coins'), elScore = $('#g-score'), elTime = $('#g-time');
+    var elTState = $('#t-state'), elTPhase = $('#t-phase'), elTConf = $('#t-conf'), elTAct = $('#t-act'), elTSafe = $('#t-safe');
+    var elRState = $('#r-state'), elRAction = $('#r-action'), elRConf = $('#r-conf'),
+        elRSent = $('#r-sent'), elRGate = $('#r-gate'), elRReason = $('#r-reason');
+    var elLog = $('#log'), elClock = $('#console-clock'), elConsoleMode = $('#console-mode');
+    var elOverlay = $('#game-overlay'), elGoTitle = $('#go-title'), elGoSub = $('#go-sub'), elGoRetry = $('#go-retry');
+    var elStatus = $('#game-status');
+    var modeManualBtn = $('#mode-manual'), modeBotBtn = $('#mode-bot');
+    var muteBtn = $('#game-mute');
+    var playBtn = $('#b-play'), stepBtn = $('#b-step'), resetBtn = $('#b-reset');
+    var hzSel = $('#c-hz'), confIn = $('#c-conf'), confOut = $('#c-conf-out'), debugChk = $('#c-debug');
+    var scene = $('#game-scene');
+    var simGame = document.querySelector('.sim-game');
+
+    function pad(n, len) { n = String(Math.max(0, Math.floor(n))); while (n.length < len) n = '0' + n; return n; }
+
+    function writeLog(text, kind) {
+      var li = document.createElement('li');
+      li.textContent = text;
+      if (kind) li.className = kind;
+      elLog.appendChild(li);
+      while (elLog.childElementCount > MAX_LOG) elLog.removeChild(elLog.firstChild);
+      elLog.scrollTop = elLog.scrollHeight;
+    }
+
+    function announce(text) {
+      if (elStatus) elStatus.textContent = text;
+    }
+
+    /* ------------------------------------------------------------ physics */
+
+    function tryJump(p) {
+      p.jumpBuf = BUFFER_STEPS;
+    }
+
+    function resolveJumpBuffer(p) {
+      if (p.jumpBuf > 0 && (p.grounded || p.coyote > 0)) {
+        p.vy = JUMP_V;
+        p.grounded = false;
+        p.coyote = 0;
+        p.jumpBuf = 0;
+        p.state = 'jump'; p.animT = 0;
+        sfx.jump();
+      }
+    }
+
+    function aabbSolidAt(x, y, w, h) {
+      var c0 = Math.floor(x / TILE), c1 = Math.floor((x + w - 1) / TILE);
+      var r0 = Math.floor(y / TILE), r1 = Math.floor((y + h - 1) / TILE);
+      for (var c = c0; c <= c1; c++) {
+        for (var r = r0; r <= r1; r++) {
+          if (tileSolid(c, r)) return { c: c, r: r };
+        }
+      }
+      return null;
+    }
+
+    function moveAndCollide(p) {
+      /* horizontal */
+      p.x += p.vx;
+      var hit = aabbSolidAt(p.x, p.y, p.w, p.h);
+      if (hit) {
+        if (p.vx > 0) p.x = hit.c * TILE - p.w;
+        else if (p.vx < 0) p.x = (hit.c + 1) * TILE;
+        p.vx = 0;
+      }
+      if (p.x < 0) p.x = 0;
+
+      /* vertical */
+      p.y += p.vy;
+      var vHit = aabbSolidAt(p.x, p.y, p.w, p.h);
+      var justLanded = false, collidedVertically = false;
+      if (vHit) {
+        collidedVertically = true;
+        if (p.vy > 0) {
+          p.y = vHit.r * TILE - p.h;
+          if (!p.grounded) justLanded = true;
+          p.grounded = true;
+        } else if (p.vy < 0) {
+          p.y = (vHit.r + 1) * TILE;
+          var b = blockAt(vHit.c, vHit.r);
+          if (b && b.type === 'q' && !b.used) hitBlock(b);
+          else if (b && b.type === 'b') sfx.bump();
+        }
+        p.vy = 0;
+      }
+      if (!collidedVertically) {
+        /* Resting exactly on a tile boundary can miss the direct AABB
+           overlap by a fraction of a pixel every other frame, which would
+           otherwise make `grounded` flicker. Probe one pixel further down
+           to confirm real ground contact instead. */
+        var probe = !!aabbSolidAt(p.x, p.y + 1, p.w, p.h);
+        p.grounded = probe && p.vy >= 0;
+      }
+      return justLanded;
+    }
+
+    function hitBlock(b) {
+      b.used = true;
+      b.bump = 6;
+      score += 100; coinsCount += 1;
+      updateHud();
+      sfx.coin();
+    }
+
+    function stepPlayer(p, dt) {
+      if (p.dead) {
+        p.deadT += dt;
+        p.vy = Math.min(p.vy + GRAVITY * 0.6, MAX_FALL);
+        p.y += p.vy;
+        return;
+      }
+
+      var accel = p.grounded ? MOVE_ACCEL : AIR_ACCEL;
+      if (input.left && !input.right) {
+        p.vx -= accel; p.facing = -1;
+      } else if (input.right && !input.left) {
+        p.vx += accel; p.facing = 1;
+      } else if (p.grounded) {
+        if (p.vx > 0) p.vx = Math.max(0, p.vx - FRICTION);
+        else if (p.vx < 0) p.vx = Math.min(0, p.vx + FRICTION);
+      }
+      p.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, p.vx));
+
+      p.vy = Math.min(p.vy + GRAVITY, MAX_FALL);
+
+      if (p.grounded) p.coyote = COYOTE_STEPS; else p.coyote = Math.max(0, p.coyote - 1);
+      if (p.jumpBuf > 0) p.jumpBuf--;
+      resolveJumpBuffer(p);
+
+      if (!input.jumpHeld && p.vy < -1) p.vy = p.vy * JUMP_CUT;
+
+      var landed = moveAndCollide(p);
+      if (landed) { p.state = 'run'; }
+
+      if (p.y > ROWS * TILE + 40) killPlayer('fell into a gap');
+
+      /* animation state */
+      if (!p.grounded) p.state = p.vy < 0 ? 'jump' : 'fall';
+      else if (Math.abs(p.vx) > 0.15) p.state = 'run';
+      else p.state = 'idle';
+      p.animT += dt;
+    }
+
+    function killPlayer(reason) {
+      if (player.dead) return;
+      player.dead = true; player.deadT = 0;
+      dead = true;
+      sfx.death();
+      announce('Player died (' + reason + ').' + (mode === 'bot' ? ' Restarting.' : ' Press Retry.'));
+      writeLog('STATE     DEAD (' + reason + ')', 'block');
+    }
+
+    /* --------------------------------------------------------- enemies -- */
+
+    function stepEnemy(e, dt) {
+      if (!e.alive) {
+        e.deadT += dt;
+        return;
+      }
+      e.walkT += dt;
+      e.x += e.dir * e.speed;
+      if (e.x < e.baseX - e.range) { e.x = e.baseX - e.range; e.dir = 1; }
+      if (e.x > e.baseX + e.range) { e.x = e.baseX + e.range; e.dir = -1; }
+
+      if (!player.dead) {
+        var overlap = player.x < e.x + e.w && player.x + player.w > e.x &&
+                      player.y < e.y + e.h && player.y + player.h > e.y;
+        if (overlap) {
+          var playerFalling = player.vy > 0.5;
+          var cameFromAbove = (player.y + player.h - player.vy) <= e.y + 5;
+          if (playerFalling && cameFromAbove) {
+            e.alive = false; e.deadT = 0;
+            player.vy = JUMP_V * 0.55;
+            score += 200; updateHud();
+            sfx.stomp();
+            writeLog('EVENT     enemy stomped, +200', 'act');
+          } else {
+            killPlayer('hit an obstacle');
+          }
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------- coins */
+
+    function stepCoins(dt) {
+      coins.forEach(function (c) {
+        c.t += dt;
+        if (c.taken || player.dead) return;
+        var cx = c.c * TILE, cy = c.row * TILE;
+        var overlap = player.x < cx + TILE && player.x + player.w > cx &&
+                      player.y < cy + TILE && player.y + player.h > cy;
+        if (overlap) {
+          c.taken = true;
+          score += 50; coinsCount += 1;
+          updateHud();
+          sfx.coin();
+        }
+      });
+    }
+
+    /* --------------------------------------------------------------- hud */
+
+    function updateHud() {
+      if (elCoins) elCoins.textContent = pad(coinsCount, 2);
+      if (elScore) elScore.textContent = pad(score, 4);
+      if (elTime) elTime.textContent = pad(timeSec, 3);
+    }
+
+    /* --------------------------------------------------- capture/decide -- */
+
+    function nearestHazardAhead() {
+      var best = null;
+      enemies.forEach(function (e) {
+        if (!e.alive) return;
+        var d = e.x - (player.x + player.w);
+        if (d >= -6 && d <= DETECT_RANGE) {
+          if (best === null || d < best.dist) best = { dist: Math.max(0, d), x: e.x, w: e.w, h: e.h, kind: 'enemy' };
+        }
+      });
+      /* pipe — a tall solid obstacle that must be jumped, not just a wall
+         to bump into */
+      var pipeD = pipe.c0 * TILE - (player.x + player.w);
+      if (pipeD >= -6 && pipeD <= DETECT_RANGE) {
+        if (best === null || pipeD < best.dist) {
+          best = { dist: Math.max(0, pipeD), x: pipe.c0 * TILE, w: (pipe.c1 - pipe.c0 + 1) * TILE, h: TILE, kind: 'pipe' };
+        }
+      }
+      /* gap ahead */
+      var startCol = Math.floor((player.x + player.w) / TILE);
+      for (var c = startCol; c < startCol + Math.ceil(DETECT_RANGE / TILE); c++) {
+        if (c >= COLS) break;
+        if (groundTop[c] == null) {
+          var d2 = c * TILE - (player.x + player.w);
+          if (d2 >= -6 && d2 <= DETECT_RANGE) {
+            if (best === null || d2 < best.dist) best = { dist: Math.max(0, d2), x: c * TILE, w: TILE, h: TILE, kind: 'gap' };
+          }
+          break;
+        }
+      }
+      return best;
+    }
+
+    function capture() {
+      var hazard = nearestHazardAhead();
+      var obs = {
+        playerX: player.x, playerY: player.y,
+        velocityX: player.vx, velocityY: player.vy,
+        grounded: player.grounded,
+        nearestObstacleX: hazard ? hazard.x : null,
+        obstacleDistance: hazard ? hazard.dist : null,
+        obstacleWidth: hazard ? hazard.w : null,
+        obstacleHeight: hazard ? hazard.h : null,
+        playerWidth: player.w, playerHeight: player.h,
+        estimatedTimeToContact: (hazard && player.vx > 0.05) ? hazard.dist / (player.vx * 60) : null,
+        gapAhead: !!(hazard && hazard.kind === 'gap'),
+        currentAction: lastActionValue,
+        previousAction: prevActionValue,
+        actionCooldown: Math.max(0, JUMP_COOLDOWN - (simTime - lastJumpAt)),
+        recentDecision: lastDecision ? lastDecision.action : null,
+        hazardKind: hazard ? hazard.kind : null
+      };
+      lastObservation = obs;
+
+      /* 100 Hz reflex: a fast, low-level check that can force a jump even
+         between two 10 Hz decision ticks, so the bot never blindly walks
+         off a ledge just because the slower decision loop hasn't sampled
+         yet. This sits below the deliberate decision + safety gate, not
+         instead of it — the same tryJump()/applyBotAction() path is used. */
+      if (mode === 'bot' && !player.dead && !levelComplete &&
+          obs.grounded && obs.obstacleDistance != null && obs.obstacleDistance <= 18 &&
+          (simTime - lastJumpAt) >= JUMP_COOLDOWN) {
+        applyBotAction('JUMP');
+        lastJumpAt = simTime;
+        writeLog('SAFETY    REFLEX — ' + obs.hazardKind + ' at ' + Math.round(obs.obstacleDistance) + 'px, jumping now', 'gate');
+        writeLog('ACT       JUMP', 'act');
+      }
+
+      if (elTState) {
+        elTState.textContent = hazard
+          ? (hazard.kind === 'gap' ? 'gap ' : 'obstacle ') + Math.round(hazard.dist) + 'px'
+          : 'path clear';
+      }
+      if (elRState) {
+        elRState.textContent = hazard
+          ? ('Obstacle detected — ' + hazard.kind + ', distance: ' + Math.round(hazard.dist) + 'px')
+          : 'No obstacle in detection range (' + DETECT_RANGE + 'px)';
+      }
+      return obs;
+    }
+
+    function decide(obs) {
+      var action, confidence, reason;
+      if (obs.dead) { return { action: 'STOP', confidence: 1, reason: 'player is not active' }; }
+
+      if (!obs.grounded) {
+        return { action: 'COAST', confidence: 0.7, reason: 'airborne — holding trajectory' };
+      }
+
+      if (obs.obstacleDistance != null) {
+        var lo = 34, hi = 132;
+        if (obs.obstacleDistance <= hi) {
+          action = 'JUMP';
+          var mid = (lo + hi) / 2;
+          var norm = 1 - Math.min(1, Math.abs(obs.obstacleDistance - mid) / mid);
+          confidence = 0.6 + 0.37 * norm;
+          reason = (obs.hazardKind === 'gap' ? 'gap' : 'obstacle') + ' within jump window (' + Math.round(obs.obstacleDistance) + 'px)';
+        } else {
+          action = 'MOVE_RIGHT';
+          confidence = 0.9;
+          reason = 'obstacle detected but not yet in jump window';
+        }
+      } else {
+        action = 'MOVE_RIGHT';
+        confidence = 0.94;
+        reason = 'clear path ahead';
+      }
+      return { action: action, confidence: confidence, reason: reason };
+    }
+
+    function safetyGate(decision) {
+      if (decision.confidence < minConfidence) {
+        return { status: 'LOW_CONFIDENCE', action: 'COAST' };
+      }
+      if (decision.action === 'JUMP' && (simTime - lastJumpAt) < JUMP_COOLDOWN) {
+        return { status: 'COOLDOWN', action: 'MOVE_RIGHT' };
+      }
+      return { status: 'PASS', action: decision.action };
+    }
+
+    function applyBotAction(action) {
+      switch (action) {
+        case 'JUMP':
+          input.right = true; input.left = false; input.jumpHeld = true;
+          tryJump(player);
+          lastJumpAt = simTime;
+          break;
+        case 'MOVE_RIGHT':
+          input.right = true; input.left = false; input.jumpHeld = false;
+          break;
+        case 'MOVE_LEFT':
+          input.left = true; input.right = false; input.jumpHeld = false;
+          break;
+        case 'COAST':
+          input.jumpHeld = false;
+          break;
+        case 'STOP':
+          input.left = false; input.right = false; input.jumpHeld = false;
+          break;
+      }
+    }
+
+    function decisionTick(obs) {
+      obs = obs || lastObservation || capture();
+      var decision = decide(obs);
+      var gate = safetyGate(decision);
+
+      prevActionValue = lastActionValue;
+      lastActionValue = gate.action;
+      lastDecision = decision;
+      lastSafety = gate;
+
+      applyBotAction(gate.action);
+
+      var sent = gate.status === 'PASS';
+      var contact = obs.estimatedTimeToContact != null ? obs.estimatedTimeToContact.toFixed(2) + 's' : '—';
+      var windowTxt = decision.action === 'JUMP' ? decision.confidence.toFixed(2) : 'n/a';
+      writeLog('THINK     jump_window=' + windowTxt + '  contact≈' + contact);
+      writeLog('DECIDE    ' + decision.action + '   confidence=' + decision.confidence.toFixed(2) + '  (' + decision.reason + ')');
+      if (gate.status !== 'PASS') {
+        writeLog('SAFETY    ' + gate.status + (gate.status === 'LOW_CONFIDENCE' ? '  BLOCKED' : ''), 'block');
+        writeLog('ACT       ' + gate.action, gate.action === 'COAST' || gate.action === 'STOP' ? '' : 'act');
+      } else {
+        writeLog('SAFETY    PASS', 'gate');
+        writeLog('ACT       ' + decision.action, decision.action === 'JUMP' ? 'act' : '');
+      }
+
+      if (elTConf) elTConf.textContent = decision.confidence.toFixed(3);
+      if (elTAct) elTAct.textContent = gate.action;
+      if (elTSafe) elTSafe.textContent = gate.status;
+      if (elRAction) { elRAction.textContent = decision.action; elRAction.setAttribute('data-act', decision.action); }
+      if (elRConf) elRConf.textContent = decision.confidence.toFixed(3);
+      if (elRSent) { elRSent.textContent = sent ? 'yes' : 'blocked'; elRSent.setAttribute('data-sent', sent ? 'ok' : 'blocked'); }
+      if (elRGate) { elRGate.textContent = gate.status; elRGate.setAttribute('data-sent', gate.status === 'PASS' ? 'ok' : 'blocked'); }
+      if (elRReason) elRReason.textContent = decision.reason;
+
+      if (decision.action !== prevActionValue || (lastSafety && lastSafety.status) !== 'PASS') {
+        if (decision.action === 'JUMP' && gate.status === 'PASS') {
+          announce('Bot: obstacle detected, jumping (confidence ' + decision.confidence.toFixed(2) + ').');
+        } else if (gate.status === 'LOW_CONFIDENCE') {
+          announce('Bot: decision below confidence threshold, coasting instead.');
+        } else if (gate.status === 'COOLDOWN') {
+          announce('Bot: jump blocked by cooldown, moving instead.');
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------ update */
+
+    var FIXED_DT = 1 / 60;
+
+    function update(dt) {
+      simTime += dt;
+      timeSec += dt;
+
+      if (mode === 'manual') {
+        input.jumpHeld = manualJumpHeld;
+      }
+
+      if (!levelComplete) stepPlayer(player, dt);
+      enemies.forEach(function (e) { stepEnemy(e, dt); });
+      stepCoins(dt);
+      blocks.forEach(function (b) { if (b.bump > 0) b.bump--; });
+
+      if (!player.dead && player.grounded !== wasGrounded) {
+        writeLog('STATE     ' + (player.grounded ? 'GROUNDED' : 'AIRBORNE'));
+      }
+      wasGrounded = player.grounded;
+
+      /* goal check */
+      if (!player.dead && !levelComplete && (player.x + player.w) >= goalCol * TILE) {
+        levelComplete = true;
+        input.left = false; input.right = false;
+        sfx.win();
+        showOverlay('LEVEL COMPLETE', 'Score ' + score + ' · ' + coinsCount + ' coins', true);
+        announce('Level complete. Score ' + score + '.');
+        writeLog('STATE     LEVEL_COMPLETE', 'act');
+        if (mode === 'bot') scheduleAutoRestart(2200);
+      }
+
+      if (player.dead && player.deadT > 0.9 && elOverlay.hidden) {
+        showOverlay('GAME OVER', mode === 'bot' ? 'The bot will retry automatically.' : 'Press Retry to try again.', false);
+        if (mode === 'bot') scheduleAutoRestart(1300);
+      }
+
+      if (mode === 'bot' && !dead && !levelComplete) {
+        captureAccum += dt;
+        while (captureAccum >= CAPTURE_DT) { captureAccum -= CAPTURE_DT; capture(); }
+
+        if (botPhase === 'idle') {
+          decisionAccum += dt;
+          if (decisionAccum >= DECISION_DT) {
+            decisionAccum -= DECISION_DT;
+            /* enter THINKING with the observation captured right now — the
+               bot decides from what it perceived at this instant, not from
+               whatever capture() produces later while it is "thinking" */
+            pendingObs = lastObservation || capture();
+            botPhase = 'thinking';
+            botPhaseT = 0;
+            writeLog('CAPTURE   ' + (pendingObs.obstacleDistance != null
+              ? (pendingObs.hazardKind || 'obstacle') + '=' + Math.round(pendingObs.obstacleDistance) + 'px'
+              : 'clear') + '  grounded=' + pendingObs.grounded + '  vx=' + pendingObs.velocityX.toFixed(2));
+            if (elTPhase) elTPhase.textContent = 'THINKING…';
+          }
+        } else if (botPhase === 'thinking') {
+          botPhaseT += dt;
+          if (botPhaseT >= THINK_DELAY) {
+            botPhase = 'idle';
+            botPhaseT = 0;
+            decisionTick(pendingObs);
+            if (elTPhase) elTPhase.textContent = 'IDLE';
+          }
+        }
+      } else if (botPhase !== 'idle') {
+        /* mode switched away, or died/level complete mid-thought: drop the
+           in-flight decision cleanly rather than leaving a stale phase */
+        botPhase = 'idle'; botPhaseT = 0;
+        if (elTPhase) elTPhase.textContent = '—';
+      }
+
+      /* camera */
+      var target = player.x - W * 0.35;
+      camX = Math.max(0, Math.min(LEVEL_PX - W, target));
+
+      updateHud();
+      if (elClock) elClock.textContent = 't+' + simTime.toFixed(2) + 's';
+    }
+
+    var restartTimer = null;
+    function scheduleAutoRestart(ms) {
+      if (restartTimer) return;
+      restartTimer = window.setTimeout(function () {
+        restartTimer = null;
+        resetLevel();
+      }, ms);
+    }
+
+    function showOverlay(title, sub, win) {
+      dead = player.dead;
+      elGoTitle.textContent = title;
+      elGoSub.textContent = sub;
+      elOverlay.hidden = false;
+    }
+    function hideOverlay() { elOverlay.hidden = true; }
+
+    /* ------------------------------------------------------------- reset */
+
+    function resetLevel() {
+      if (restartTimer) { window.clearTimeout(restartTimer); restartTimer = null; }
+      player = freshPlayer();
+      camX = 0;
+      enemies.forEach(function (e) { e.alive = true; e.deadT = 0; e.x = e.baseX; e.dir = 1; });
+      coins.forEach(function (c) { c.taken = false; });
+      blocks.forEach(function (b) { b.used = false; b.bump = 0; });
+      score = 0; coinsCount = 0; timeSec = 0;
+      dead = false; levelComplete = false; wasGrounded = false;
+      captureAccum = 0; decisionAccum = 0; botPhase = 'idle'; botPhaseT = 0; pendingObs = null;
+      lastObservation = null; lastDecision = null; lastSafety = null;
+      lastActionValue = 'STOP'; prevActionValue = 'STOP'; lastJumpAt = -99; simTime = 0;
+      input.left = false; input.right = false; input.jumpHeld = false; input.jumpPressed = false;
+      decisionLog = [];
+      if (elLog) elLog.innerHTML = '<li>' + (mode === 'bot' ? 'Bot mode: waiting for first capture…' : 'Manual mode: bot idle.') + '</li>';
+      if (elTState) elTState.textContent = '—';
+      if (elTPhase) elTPhase.textContent = mode === 'bot' ? 'IDLE' : '—';
+      if (elTConf) elTConf.textContent = '—';
+      if (elTAct) elTAct.textContent = '—';
+      if (elTSafe) elTSafe.textContent = '—';
+      if (elRState) elRState.textContent = mode === 'bot' ? 'Waiting for first capture…' : 'Bot mode is off — switch it on above to see live captures.';
+      if (elRAction) { elRAction.textContent = '—'; elRAction.removeAttribute('data-act'); }
+      if (elRConf) elRConf.textContent = '—';
+      if (elRSent) { elRSent.textContent = '—'; elRSent.removeAttribute('data-sent'); }
+      if (elRGate) { elRGate.textContent = '—'; elRGate.removeAttribute('data-sent'); }
+      if (elRReason) elRReason.textContent = '—';
+      hideOverlay();
+      updateHud();
+    }
+
+    /* ------------------------------------------------------------ render */
+
+    function drawPlayer(p) {
+      var px = Math.round(p.x - camX), py = Math.round(p.y);
+      ctx.save();
+      if (p.dead) {
+        ctx.translate(px + p.w / 2, py + p.h / 2);
+        ctx.rotate(Math.min(1.6, p.deadT * 3));
+        ctx.translate(-p.w / 2, -p.h / 2);
+      } else {
+        ctx.translate(px, py);
+        if (p.facing < 0) { ctx.translate(p.w, 0); ctx.scale(-1, 1); }
+      }
+
+      var legOffset = 0, armUp = false;
+      var t = p.animT;
+      if (p.state === 'run') legOffset = Math.sin(t * 16) * 3;
+      if (p.state === 'jump') armUp = true;
+      if (p.state === 'fall') armUp = false;
+
+      /* legs */
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillRect(2, p.h - 8 + (legOffset > 0 ? -1 : 0), 4, 8);
+      ctx.fillRect(p.w - 6, p.h - 8 + (legOffset < 0 ? -1 : 0), 4, 8);
+
+      /* body / overalls */
+      ctx.fillStyle = COLORS.suit;
+      ctx.fillRect(1, p.h - 18, p.w - 2, 12);
+      ctx.fillStyle = COLORS.suitLo;
+      ctx.fillRect(1, p.h - 10, p.w - 2, 4);
+
+      /* arms */
+      ctx.fillStyle = COLORS.skin;
+      ctx.fillRect(-1, armUp ? p.h - 22 : p.h - 15, 4, armUp ? 10 : 6);
+      ctx.fillRect(p.w - 3, armUp ? p.h - 22 : p.h - 15, 4, armUp ? 10 : 6);
+
+      /* head */
+      ctx.fillStyle = COLORS.skin;
+      ctx.fillRect(2, p.h - 24, p.w - 4, 8);
+      /* cap */
+      ctx.fillStyle = COLORS.brick;
+      ctx.fillRect(1, p.h - 26, p.w - 2, 4);
+      ctx.fillRect(p.w - 5, p.h - 24, 6, 2);
+      /* visor / eye */
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillRect(p.w - 6, p.h - 21, 3, 2);
+
+      ctx.restore();
+    }
+
+    function drawEnemy(e) {
+      if (!e.alive) return;
+      var ex = Math.round(e.x - camX), ey = Math.round(e.y);
+      if (ex < -20 || ex > W + 20) return;
+      var wob = Math.sin(e.walkT * 10) * 1.5;
+      ctx.fillStyle = COLORS.leafLo;
+      ctx.fillRect(ex, ey + 3, e.w, e.h - 3);
+      ctx.fillStyle = COLORS.leaf;
+      ctx.fillRect(ex, ey, e.w, e.h - 5);
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillRect(ex + 2, ey + 3, 2, 2);
+      ctx.fillRect(ex + e.w - 4, ey + 3, 2, 2);
+      ctx.fillStyle = COLORS.leafLo;
+      ctx.fillRect(ex + 1, ey + e.h - 3 + wob * 0.2, 3, 3);
+      ctx.fillRect(ex + e.w - 4, ey + e.h - 3 - wob * 0.2, 3, 3);
+    }
+
+    function drawCoin(c) {
+      if (c.taken) return;
+      var cx = c.c * TILE - camX, cy = c.row * TILE;
+      if (cx < -20 || cx > W + 20) return;
+      var s = Math.abs(Math.sin(c.t * 3));
+      var w = Math.max(2, TILE * 0.5 * s);
+      ctx.fillStyle = COLORS.coin;
+      ctx.fillRect(cx + (TILE - w) / 2, cy + 2, w, TILE - 6);
+      ctx.fillStyle = COLORS.coinHi;
+      ctx.fillRect(cx + (TILE - w) / 2, cy + 2, Math.max(1, w * 0.3), 3);
+    }
+
+    function drawBlock(b) {
+      var bx = Math.round(b.c * TILE - camX), by = Math.round(b.row * TILE - (b.bump > 0 ? Math.min(4, b.bump) : 0));
+      if (bx < -TILE || bx > W + TILE) return;
+      if (b.type === 'q') {
+        ctx.fillStyle = b.used ? COLORS.brown : COLORS.coin;
+        ctx.fillRect(bx, by, TILE - 1, TILE - 1);
+        ctx.fillStyle = b.used ? COLORS.brownLo : COLORS.coinLo;
+        ctx.fillRect(bx, by + TILE - 4, TILE - 1, 3);
+        if (!b.used) {
+          ctx.fillStyle = COLORS.brownLo;
+          ctx.font = '9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('?', bx + TILE / 2, by + TILE - 4);
+        }
+      } else {
+        ctx.fillStyle = COLORS.brown;
+        ctx.fillRect(bx, by, TILE - 1, TILE - 1);
+        ctx.fillStyle = COLORS.brownLo;
+        ctx.fillRect(bx, by + TILE - 4, TILE - 1, 3);
+        ctx.strokeStyle = COLORS.brownLo;
+        ctx.strokeRect(bx + 0.5, by + 0.5, TILE - 2, TILE - 2);
+      }
+    }
+
+    function drawGround() {
+      var c0 = Math.max(0, Math.floor(camX / TILE) - 1);
+      var c1 = Math.min(COLS - 1, Math.ceil((camX + W) / TILE) + 1);
+      for (var c = c0; c <= c1; c++) {
+        if (groundTop[c] == null) continue;
+        var x = Math.round(c * TILE - camX);
+        for (var r = groundTop[c]; r < ROWS; r++) {
+          var y = r * TILE;
+          ctx.fillStyle = r === groundTop[c] ? COLORS.brownHi : COLORS.brown;
+          ctx.fillRect(x, y, TILE, TILE);
+          ctx.strokeStyle = COLORS.brownLo;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+        }
+      }
+      platforms.forEach(function (p) {
+        for (var c2 = p.c0; c2 <= p.c1; c2++) {
+          var x2 = Math.round(c2 * TILE - camX);
+          if (x2 < -TILE || x2 > W + TILE) continue;
+          ctx.fillStyle = COLORS.brownHi;
+          ctx.fillRect(x2, p.row * TILE, TILE, TILE);
+          ctx.strokeStyle = COLORS.brownLo;
+          ctx.strokeRect(x2 + 0.5, p.row * TILE + 0.5, TILE - 1, TILE - 1);
+        }
+      });
+    }
+
+    function drawPipe() {
+      var x = Math.round(pipe.c0 * TILE - camX);
+      var y = pipe.rowTop * TILE;
+      var w = (pipe.c1 - pipe.c0 + 1) * TILE;
+      var h = (ROWS - pipe.rowTop) * TILE;
+      ctx.fillStyle = COLORS.leaf;
+      ctx.fillRect(x, y + 5, w, h - 5);
+      ctx.fillStyle = COLORS.leafLo;
+      ctx.fillRect(x, y, w, 6);
+      ctx.fillStyle = COLORS.leafHi;
+      ctx.fillRect(x + 2, y + 6, 3, h - 6);
+      ctx.strokeStyle = COLORS.ink;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    }
+
+    function drawGoal() {
+      var x = Math.round(goalCol * TILE - camX);
+      var poleTop = 3 * TILE;
+      var poleBottom = (groundTop[Math.min(goalCol, COLS - 1)] || ROWS) * TILE;
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillRect(x + TILE / 2 - 1, poleTop, 2, poleBottom - poleTop);
+      ctx.fillStyle = levelComplete ? COLORS.coin : COLORS.brick;
+      ctx.beginPath();
+      ctx.moveTo(x + TILE / 2 + 1, poleTop + 3);
+      ctx.lineTo(x + TILE / 2 + 16, poleTop + 8);
+      ctx.lineTo(x + TILE / 2 + 1, poleTop + 13);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawDetection() {
+      if (mode !== 'bot' || player.dead || levelComplete) return;
+      var x = Math.round(player.x + player.w - camX);
+      var y = 2 * TILE;
+      var w = DETECT_RANGE, h = (ROWS - 5) * TILE;
+      ctx.save();
+      ctx.fillStyle = 'rgba(252,188,0,0.08)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = 'rgba(251,251,242,0.55)';
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.setLineDash([]);
+      if (lastObservation && lastObservation.obstacleDistance != null) {
+        var hx = Math.round(lastObservation.nearestObstacleX - camX);
+        ctx.strokeStyle = COLORS.coin;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(hx - 2, 2 * TILE - 2, (lastObservation.obstacleWidth || TILE) + 4, h + 4);
+      }
+      ctx.restore();
+    }
+
+    function drawDebug() {
+      if (!debugMode) return;
+      ctx.save();
+
+      /* player hitbox */
+      ctx.strokeStyle = '#ff3355';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(Math.round(player.x - camX) + 0.5, Math.round(player.y) + 0.5, player.w, player.h);
+
+      /* velocity vector, scaled up so small speeds are still visible */
+      var vpx = Math.round(player.x + player.w / 2 - camX);
+      var vpy = Math.round(player.y + player.h / 2);
+      ctx.strokeStyle = '#33e0ff';
+      ctx.beginPath();
+      ctx.moveTo(vpx, vpy);
+      ctx.lineTo(vpx + player.vx * 8, vpy + player.vy * 4);
+      ctx.stroke();
+
+      /* nearest obstacle hitbox */
+      if (mode === 'bot' && lastObservation && lastObservation.obstacleDistance != null) {
+        ctx.strokeStyle = '#ffee33';
+        ctx.strokeRect(
+          Math.round(lastObservation.nearestObstacleX - camX) + 0.5,
+          2 * TILE + 0.5,
+          lastObservation.obstacleWidth || TILE,
+          lastObservation.obstacleHeight || TILE
+        );
+      }
+
+      /* text readout: grounded, decision timer, action cooldown, phase */
+      if (mode === 'bot') {
+        var cooldown = Math.max(0, JUMP_COOLDOWN - (simTime - lastJumpAt));
+        var timer = botPhase === 'thinking' ? THINK_DELAY - botPhaseT : DECISION_DT - decisionAccum;
+        var lines = [
+          'grounded=' + player.grounded,
+          'phase=' + botPhase,
+          'next_tick=' + Math.max(0, timer).toFixed(2) + 's',
+          'jump_cooldown=' + cooldown.toFixed(2) + 's'
+        ];
+        ctx.font = '9px "IBM Plex Mono", monospace';
+        ctx.textBaseline = 'top';
+        var tx = 6, ty = 6;
+        lines.forEach(function (line, i) {
+          ctx.fillStyle = 'rgba(16,21,52,0.72)';
+          ctx.fillRect(tx - 2, ty + i * 11 - 1, ctx.measureText(line).width + 4, 11);
+          ctx.fillStyle = '#fcbc00';
+          ctx.fillText(line, tx, ty + i * 11);
+        });
+      }
+
+      ctx.restore();
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+
+      /* sky */
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, COLORS.skyHi);
+      g.addColorStop(1, COLORS.skyLo);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+
+      /* clouds, slow parallax */
+      ctx.fillStyle = 'rgba(251,251,242,0.9)';
+      for (var i = 0; i < 8; i++) {
+        var cx = (i * 220 - camX * 0.4) % (COLS * TILE + 220);
+        if (cx < -60) cx += COLS * TILE + 220;
+        var cy = 20 + (i % 3) * 26;
+        ctx.fillRect(cx, cy, 34, 10);
+        ctx.fillRect(cx + 8, cy - 6, 20, 8);
+      }
+
+      /* distant hill parallax */
+      ctx.fillStyle = 'rgba(63,116,216,0.35)';
+      for (var h2 = 0; h2 < 6; h2++) {
+        var hx = (h2 * 300 - camX * 0.6) % (COLS * TILE + 300);
+        if (hx < -140) hx += COLS * TILE + 300;
+        ctx.beginPath();
+        ctx.moveTo(hx, H - 34);
+        ctx.lineTo(hx + 70, H - 110);
+        ctx.lineTo(hx + 140, H - 34);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      drawGround();
+      blocks.forEach(drawBlock);
+      coins.forEach(drawCoin);
+      drawPipe();
+      drawGoal();
+      enemies.forEach(drawEnemy);
+      drawDetection();
+      if (!player.dead || player.deadT < 1.1) drawPlayer(player);
+      drawDebug();
+
+      ctx.strokeStyle = 'rgba(16,21,52,0.15)';
+    }
+
+    /* --------------------------------------------------------- game loop */
+
+    var manualJumpHeld = false;
+    var acc = 0, lastT = null;
+    function frame(t) {
+      requestAnimationFrame(frame);
+      if (lastT == null) lastT = t;
+      var dt = Math.min(0.05, (t - lastT) / 1000);
+      lastT = t;
+      acc += dt;
+      var steps = 0;
+      while (acc >= FIXED_DT && steps < 6) {
+        if (!paused) update(FIXED_DT);
+        acc -= FIXED_DT;
+        steps++;
+      }
+      render();
+    }
+
+    /* ------------------------------------------------------------- input */
+
+    /* The game sits mid-page, so it only claims keys while it is on screen, and
+       never from a form control (the range slider and select need their arrows).
+       Releases are always honoured so a key can never stay stuck down. */
+    var gameInView = true;
+    var gameStage = $('#game-scene');
+    if (gameStage && 'IntersectionObserver' in window) {
+      gameInView = false;
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          gameInView = en.isIntersecting && en.intersectionRatio >= 0.5;
+          if (!gameInView) { input.left = false; input.right = false; manualJumpHeld = false; }
+        });
+      }, { threshold: [0, 0.5, 1] }).observe(gameStage);
+    }
+    function isFormControl(el) {
+      var t = el && el.tagName;
+      return t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || !!(el && el.isContentEditable);
+    }
+
+    function setManualInput(e, down) {
+      if (mode !== 'manual' || player.dead || levelComplete) return;
+      if (down && (!gameInView || isFormControl(e.target))) return;
+      var k = e.key;
+      if (k === 'ArrowLeft' || k === 'a' || k === 'A') { input.left = down; e.preventDefault(); }
+      else if (k === 'ArrowRight' || k === 'd' || k === 'D') { input.right = down; e.preventDefault(); }
+      else if (k === ' ' || k === 'ArrowUp' || k === 'w' || k === 'W') {
+        manualJumpHeld = down;
+        if (down) { ensureAudio(); tryJump(player); }
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('keydown', function (e) { setManualInput(e, true); });
+    window.addEventListener('keyup', function (e) { setManualInput(e, false); });
+
+    function bindHold(el, onDown, onUp) {
+      if (!el) return;
+      el.addEventListener('pointerdown', function (e) { e.preventDefault(); ensureAudio(); onDown(); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+        el.addEventListener(ev, function () { onUp(); });
+      });
+    }
+    bindHold($('#tc-left'), function () { input.left = true; }, function () { input.left = false; });
+    bindHold($('#tc-right'), function () { input.right = true; }, function () { input.right = false; });
+    bindHold($('#tc-jump'), function () { manualJumpHeld = true; tryJump(player); }, function () { manualJumpHeld = false; });
+
+    /* -------------------------------------------------------- mode / ui */
+
+    function setMode(next) {
+      mode = next;
+      var isBot = mode === 'bot';
+      modeManualBtn.setAttribute('aria-pressed', String(!isBot));
+      modeBotBtn.setAttribute('aria-pressed', String(isBot));
+      scene.classList.toggle('mode-bot-active', isBot);
+      if (simGame) simGame.classList.toggle('mode-bot-active', isBot);
+      if (elConsoleMode) elConsoleMode.textContent = isBot ? 'bot mode — engine running' : 'manual — bot idle';
+      input.left = false; input.right = false; input.jumpHeld = false; manualJumpHeld = false;
+      captureAccum = 0; decisionAccum = 0; botPhase = 'idle'; botPhaseT = 0;
+      if (elTPhase) elTPhase.textContent = isBot ? 'IDLE' : '—';
+      announce(isBot
+        ? 'Bot mode. Watching the local decision engine play automatically.'
+        : 'Manual mode. Use Arrow keys / A D to move, Space / W / Up to jump.');
+      if (elLog) elLog.innerHTML = '<li>' + (isBot ? 'Bot mode: waiting for first capture…' : 'Manual mode: bot idle.') + '</li>';
+      if (elRState) elRState.textContent = isBot ? 'Waiting for first capture…' : 'Bot mode is off — switch it on above to see live captures.';
+    }
+    modeManualBtn.addEventListener('click', function () { ensureAudio(); setMode('manual'); });
+    modeBotBtn.addEventListener('click', function () { ensureAudio(); setMode('bot'); });
+
+    muteBtn.addEventListener('click', function () {
+      muted = !muted;
+      muteBtn.setAttribute('aria-pressed', String(muted));
+      muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+      if (!muted) ensureAudio();
+    });
+
+    function doReset() { ensureAudio(); resetLevel(); announce('Level reset.'); }
+    $('#game-reset-hero').addEventListener('click', doReset);
+    resetBtn.addEventListener('click', doReset);
+    elGoRetry.addEventListener('click', doReset);
+
+    playBtn.addEventListener('click', function () {
+      paused = !paused;
+      playBtn.setAttribute('aria-pressed', String(!paused));
+      playBtn.textContent = paused ? 'Resume engine' : 'Pause engine';
+    });
+    stepBtn.addEventListener('click', function () {
+      paused = true;
+      playBtn.setAttribute('aria-pressed', 'false');
+      playBtn.textContent = 'Resume engine';
+      update(FIXED_DT);
+      render();
+    });
+
+    hzSel.addEventListener('change', function () {
+      decisionHz = parseFloat(hzSel.value);
+      DECISION_DT = 1 / decisionHz;
+      decisionAccum = 0;
+    });
+    confIn.addEventListener('input', function () {
+      minConfidence = parseFloat(confIn.value);
+      confOut.textContent = minConfidence.toFixed(2);
+    });
+    if (debugChk) {
+      debugChk.addEventListener('change', function () { debugMode = debugChk.checked; });
+    }
+
+    /* --------------------------------------------------------- lift-off */
+
+    resetLevel();
+    updateHud();
+    confOut.textContent = minConfidence.toFixed(2);
+
+    if (reduceMotion.matches) {
+      /* keep the game itself fully usable; just skip auto-starting bot demo
+         so the page is not moving the instant it loads */
+    }
+
+    requestAnimationFrame(frame);
+  })();
+  /* --------------------------------------------------------------- profile */
+
+  (function profile() {
+    var list = $('#fields');
+    var json = $('#profile-json');
+    if (!list || !json) return;
+
+    var buttons = $$('button', list);
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var field = btn.getAttribute('data-field');
+        buttons.forEach(function (b) { b.setAttribute('aria-current', String(b === btn)); });
+        $$('span[data-line]', json).forEach(function (line) {
+          line.classList.toggle('lit', line.getAttribute('data-line') === field);
+        });
+      });
+    });
+  })();
+
+  /* ------------------------------------------------------------------ copy */
+
+  $$('.copy').forEach(function (btn) {
+    btn.setAttribute('aria-live', 'polite');
+    var label = btn.getAttribute('data-copy') === '#profile-json'
+      ? 'Copy the example profile JSON'
+      : 'Copy this command';
+    btn.setAttribute('aria-label', label);
+    btn.addEventListener('click', function () {
+      var target = $(btn.getAttribute('data-copy'));
+      if (!target) return;
+      var text = target.textContent.replace(/\s+$/, '');
+      var done = function () {
+        var was = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.setAttribute('aria-label', 'Copied');
+        window.setTimeout(function () {
+          btn.textContent = was;
+          btn.setAttribute('aria-label', label);
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { btn.textContent = 'Press Ctrl+C'; });
+      } else {
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(target);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        done();
+      }
+    });
+  });
+
+})();
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "system1-gamebot",
+  "description": "A Python framework for screen-driven game automation: capture a screen region, detect a threat, ask a TypeSafe System One model for one action, apply safety rules, then press a key.",
+  "codeRepository": "https://github.com/ojas-mohbansi/system1-gamebot",
+  "programmingLanguage": "Python",
+  "license": "https://opensource.org/licenses/MIT",
+  "author": { "@type": "Person", "name": "Ojas Mohbansi", "url": "https://github.com/ojas-mohbansi" }
+}
+</script>
+</body>
+</html>
